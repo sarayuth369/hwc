@@ -8,4 +8,7 @@ class CurrentUserServiceImpl implements CurrentUserService {
 
   @override
   String? get currentUserId => _client.auth.currentUser?.id;
+
+  @override
+  String? get accessToken => _client.auth.currentSession?.accessToken;
 }

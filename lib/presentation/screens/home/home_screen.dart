@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../domain/models/wellness_summary.dart';
 import '../../../domain/repositories/daily_summary_repository.dart';
 import '../../widgets/wellness_score_card.dart';
+import '../ai_chat/ai_chat_screen.dart';
 import '../health/health_screen.dart';
 import '../quick_actions/quick_actions_screen.dart';
 
@@ -71,6 +72,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              key: const Key('homeAskAiButton'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AiChatScreen()),
+              ),
+              child: const Text('Ask AI'),
             ),
           ],
         ),

@@ -1,4 +1,5 @@
 import 'package:bkknex_health_app/domain/models/activity_record.dart';
+import 'package:bkknex_health_app/domain/models/ai_chat_failure.dart';
 import 'package:bkknex_health_app/domain/models/nutrition_record.dart';
 import 'package:bkknex_health_app/domain/models/sleep_record.dart';
 import 'package:bkknex_health_app/domain/models/user_preferences.dart';
@@ -6,6 +7,7 @@ import 'package:bkknex_health_app/domain/models/user_profile.dart';
 import 'package:bkknex_health_app/domain/models/water_record.dart';
 import 'package:bkknex_health_app/domain/models/weight_record.dart';
 import 'package:bkknex_health_app/domain/models/wellness_summary.dart';
+import 'package:bkknex_health_app/domain/repositories/ai_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/current_user_service.dart';
 import 'package:bkknex_health_app/domain/repositories/daily_summary_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/metric_repositories.dart';
@@ -14,6 +16,34 @@ import 'package:bkknex_health_app/domain/repositories/profile_repository.dart';
 class FakeCurrentUserService implements CurrentUserService {
   @override
   String? currentUserId = 'test-user';
+
+  @override
+  String? accessToken = 'test-access-token';
+}
+
+class FakeAiRepository implements AiRepository {
+  Map<String, dynamic>? lastChatRequest;
+  Map<String, dynamic> chatResponse = {
+    'reply': 'This is a test reply.',
+    'conversationId': 'test-conversation',
+  };
+  AiChatFailure? failure;
+
+  /// Optional artificial delay so widget tests can observe the loading
+  /// state between a `pump()` and `pumpAndSettle()`.
+  Duration delay = Duration.zero;
+
+  @override
+  Future<Map<String, dynamic>> chat(Map<String, dynamic> requestBody) async {
+    lastChatRequest = requestBody;
+    if (delay > Duration.zero) await Future<void>.delayed(delay);
+    if (failure != null) throw failure!;
+    return chatResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> insight(Map<String, dynamic> requestBody) =>
+      chat(requestBody);
 }
 
 class FakeProfileRepository implements ProfileRepository {
