@@ -5,6 +5,9 @@ import 'package:provider/single_child_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bkknex_health_app/data/local/chat_history_store.dart';
+import 'package:bkknex_health_app/data/local/free_tier_subscription_repository.dart';
+import 'package:bkknex_health_app/data/local/notification_service.dart';
+import 'package:bkknex_health_app/data/local/null_family_repository.dart';
 import 'package:bkknex_health_app/domain/models/activity_record.dart';
 import 'package:bkknex_health_app/domain/models/ai_chat_failure.dart';
 import 'package:bkknex_health_app/domain/models/nutrition_record.dart';
@@ -18,8 +21,10 @@ import 'package:bkknex_health_app/domain/repositories/ai_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/auth_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/current_user_service.dart';
 import 'package:bkknex_health_app/domain/repositories/daily_summary_repository.dart';
+import 'package:bkknex_health_app/domain/repositories/family_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/metric_repositories.dart';
 import 'package:bkknex_health_app/domain/repositories/profile_repository.dart';
+import 'package:bkknex_health_app/domain/repositories/subscription_repository.dart';
 
 class FakeAuthRepository implements AuthRepository {
   final _controller = StreamController<bool>.broadcast();
@@ -92,6 +97,34 @@ class FakeAiRepository implements AiRepository {
   @override
   Future<Map<String, dynamic>> insight(Map<String, dynamic> requestBody) =>
       chat(requestBody);
+
+  Map<String, dynamic>? lastImageRequest;
+  Map<String, dynamic> imageResponse = {
+    'description': 'A bowl of grilled chicken with rice and vegetables.',
+  };
+
+  @override
+  Future<Map<String, dynamic>> analyzeImage(
+    Map<String, dynamic> requestBody,
+  ) async {
+    lastImageRequest = requestBody;
+    if (failure != null) throw failure!;
+    return imageResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> transcribeVoice(
+    Map<String, dynamic> requestBody,
+  ) async {
+    throw failure ?? const AiNotImplementedFailure();
+  }
+
+  @override
+  Future<Map<String, dynamic>> synthesizeVoice(
+    Map<String, dynamic> requestBody,
+  ) async {
+    throw failure ?? const AiNotImplementedFailure();
+  }
 }
 
 class FakeProfileRepository implements ProfileRepository {
@@ -210,6 +243,15 @@ List<SingleChildWidget> fullProviderSet({
     ),
     Provider<ChatHistoryStore>(
       create: (_) => ChatHistoryStore(prefs),
+    ),
+    Provider<NotificationService>(
+      create: (_) => NotificationService(prefs),
+    ),
+    Provider<SubscriptionRepository>(
+      create: (_) => FreeTierSubscriptionRepository(),
+    ),
+    Provider<FamilyRepository>(
+      create: (_) => NullFamilyRepository(),
     ),
     Provider<DailySummaryRepository>.value(
       value: dailySummaryRepository ?? FakeDailySummaryRepository(),

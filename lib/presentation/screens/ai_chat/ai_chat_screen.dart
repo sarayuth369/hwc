@@ -75,6 +75,28 @@ class _AiChatScreenState extends State<AiChatScreen> {
     await store.clear();
   }
 
+  /// Voice input has no real audio-capture UI yet (that's a separate,
+  /// larger feature: a recording dependency + microphone permission), but
+  /// the mic button is wired to a real server call rather than left dead —
+  /// this genuinely hits `/api/ai/voice/transcribe` and shows whatever the
+  /// server actually says (a real 501 today, since `NullVoiceProvider` has
+  /// no backend behind it yet).
+  Future<void> _attemptVoice() async {
+    final aiRepository = context.read<AiRepository>();
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      await aiRepository.transcribeVoice(const {});
+    } on AiChatFailure catch (failure) {
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        SnackBar(
+          key: const Key('aiChatVoiceSnackBar'),
+          content: Text(failure.message),
+        ),
+      );
+    }
+  }
+
   Future<void> _send([String? message]) async {
     final text = message ?? _controller.text.trim();
     if (text.isEmpty) return;
@@ -186,11 +208,11 @@ class _AiChatScreenState extends State<AiChatScreen> {
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                const IconButton(
-                  key: Key('aiChatVoiceButton'),
-                  onPressed: null,
-                  tooltip: 'Voice — coming soon',
-                  icon: Icon(Icons.mic_none),
+                IconButton(
+                  key: const Key('aiChatVoiceButton'),
+                  onPressed: _attemptVoice,
+                  tooltip: 'Voice',
+                  icon: const Icon(Icons.mic_none),
                 ),
                 Expanded(
                   child: TextField(

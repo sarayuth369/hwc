@@ -21,3 +21,14 @@ class AiProviderFailure extends AiChatFailure {
     super.message = 'AI is unavailable right now. Try again in a moment.',
   ]);
 }
+
+/// A capability that genuinely doesn't exist on the server yet (e.g. voice
+/// — the Worker's `NullVoiceProvider` returns a real 501). Carries the
+/// server's own message so the UI states the honest gap rather than a
+/// generic "try again" that implies the feature should eventually work on
+/// retry.
+class AiNotImplementedFailure extends AiChatFailure {
+  const AiNotImplementedFailure([
+    super.message = 'This isn\'t available yet.',
+  ]);
+}

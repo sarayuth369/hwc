@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -14,14 +15,14 @@ import '../../../domain/repositories/current_user_service.dart';
 import '../../../domain/repositories/metric_repositories.dart';
 import '../../../domain/repositories/profile_repository.dart';
 
-/// Food Scanner: a **real** photo capture/pick flow, followed by an
-/// **honest** AI-assisted nutrition estimate. There is no Vision AI
-/// endpoint on the Worker today, so the photo is not analyzed by an image
-/// model — instead, the user briefly describes what it is, and that
-/// description goes through the already-real `/api/ai/chat` endpoint for a
-/// plain-language calorie/macro estimate. This is documented in
-/// `HWC_DECISIONS.md` as a deliberate choice, not a placeholder pretending
-/// to be full image recognition.
+/// Food Scanner: real photo capture/pick, then **real** AI vision analysis
+/// (the Worker's `/api/ai/image/analyze` route, backed by Cloudflare
+/// Workers AI's `@cf/llava-hf/llava-1.5-7b-hf` model) auto-fills a
+/// description of what's in the photo, which is then sent through the
+/// existing `/api/ai/chat` endpoint for a nutrition estimate. The
+/// description is editable — the vision model's output is prose, not
+/// guaranteed-accurate structured data, so the user stays in control of
+/// what actually gets estimated and logged.
 class FoodScannerScreen extends StatefulWidget {
   const FoodScannerScreen({super.key});
 
@@ -33,6 +34,7 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
   final _descriptionController = TextEditingController();
   final _picker = ImagePicker();
   XFile? _photo;
+  bool _isAnalyzingPhoto = false;
   bool _isEstimating = false;
   bool _isSaving = false;
   String? _estimate;
@@ -54,6 +56,32 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
       _failure = null;
       _saveMessage = null;
     });
+    await _analyzePhoto(photo);
+  }
+
+  Future<void> _analyzePhoto(XFile photo) async {
+    final aiRepository = context.read<AiRepository>();
+    setState(() {
+      _isAnalyzingPhoto = true;
+      _failure = null;
+    });
+    try {
+      final bytes = await photo.readAsBytes();
+      final response = await aiRepository.analyzeImage({
+        'imageBase64': base64Encode(bytes),
+        'purpose': 'food',
+      });
+      if (!mounted) return;
+      final description = response['description'] as String?;
+      if (description != null && description.isNotEmpty) {
+        _descriptionController.text = description;
+      }
+    } on AiChatFailure catch (failure) {
+      if (!mounted) return;
+      setState(() => _failure = failure);
+    } finally {
+      if (mounted) setState(() => _isAnalyzingPhoto = false);
+    }
   }
 
   Future<void> _estimateNutrition() async {
@@ -125,24 +153,51 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            AspectRatio(
-              aspectRatio: 4 / 3,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(16),
+            Stack(
+              children: [
+                AspectRatio(
+                  aspectRatio: 4 / 3,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: _photo == null
+                        ? Center(
+                            child: Icon(
+                              Icons.restaurant_outlined,
+                              size: 48,
+                              color: theme.colorScheme.primary,
+                            ),
+                          )
+                        : Image.file(File(_photo!.path), fit: BoxFit.cover),
+                  ),
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: _photo == null
-                    ? Center(
-                        child: Icon(
-                          Icons.restaurant_outlined,
-                          size: 48,
-                          color: theme.colorScheme.primary,
+                if (_isAnalyzingPhoto)
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(color: Colors.white),
+                            SizedBox(height: 12),
+                            Text(
+                              'Looking at your photo...',
+                              key: Key('foodScannerAnalyzingLabel'),
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ],
                         ),
-                      )
-                    : Image.file(File(_photo!.path), fit: BoxFit.cover),
-              ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 16),
             Row(
@@ -177,8 +232,9 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'AI gives a rough estimate from your description — full photo '
-              'analysis is not available yet.',
+              'AI reads your photo to suggest a description, then gives a '
+              'rough nutrition estimate from it — always check it looks '
+              'right before adding.',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 12),

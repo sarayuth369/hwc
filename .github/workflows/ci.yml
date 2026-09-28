@@ -28,6 +28,12 @@ jobs:
           flutter create --platforms=android --org com.bkknex .
           rm -f test/widget_test.dart
 
+      - name: Patch Android manifest (camera + notification permissions)
+        # android/ is gitignored and regenerated above by `flutter create`,
+        # which produces a stock manifest with no custom permissions. This
+        # re-applies what the app actually needs (see scripts/patch_android_manifest.sh).
+        run: ./scripts/patch_android_manifest.sh
+
       - name: Install dependencies
         run: flutter pub get
 

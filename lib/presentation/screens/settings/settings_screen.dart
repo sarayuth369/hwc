@@ -2,18 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_theme_mode_controller.dart';
+import '../../../data/local/notification_service.dart';
 import '../../../domain/models/auth_failure.dart';
 import '../../../domain/repositories/auth_repository.dart';
 import '../../widgets/senior_mode_toggle.dart';
+import '../family/family_mode_screen.dart';
+import '../health_report/health_report_reader_screen.dart';
+import 'subscription_screen.dart';
 
 /// App version shown in About — kept as a plain constant rather than
 /// pulling in `package_info_plus` for one string; update alongside
 /// `pubspec.yaml`'s `version:` field.
 const _appVersion = '0.1.0';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _showChangePasswordDialog(BuildContext context) async {
     final controller = TextEditingController();
     final authRepository = context.read<AuthRepository>();
@@ -77,9 +86,29 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _toggleReminder(bool enabled) async {
+    final notificationService = context.read<NotificationService>();
+    await notificationService.setEnabled(enabled);
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _pickReminderTime() async {
+    final notificationService = context.read<NotificationService>();
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: notificationService.reminderTime,
+    );
+    if (picked == null) return;
+    await notificationService.setEnabled(true, time: picked);
+    if (!mounted) return;
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeController = context.watch<AppThemeModeController>();
+    final notificationService = context.watch<NotificationService>();
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
@@ -127,54 +156,82 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           const _SectionLabel('Notifications'),
-          const Card(
-            child: SwitchListTile(
-              title: Text('Reminders'),
-              subtitle: Text('Coming soon'),
-              value: false,
-              onChanged: null,
+          Card(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  key: const Key('waterReminderSwitch'),
+                  title: const Text('Water reminder'),
+                  subtitle: const Text('A daily nudge to stay hydrated'),
+                  value: notificationService.isEnabled,
+                  onChanged: _toggleReminder,
+                ),
+                if (notificationService.isEnabled)
+                  ListTile(
+                    key: const Key('waterReminderTimeTile'),
+                    leading: const Icon(Icons.access_time),
+                    title: const Text('Reminder time'),
+                    trailing: Text(
+                      notificationService.reminderTime.format(context),
+                    ),
+                    onTap: _pickReminderTime,
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const _SectionLabel('Features'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  key: const Key('healthReportReaderTile'),
+                  leading: const Icon(Icons.description_outlined),
+                  title: const Text('Health Report Reader'),
+                  subtitle: const Text('AI-assisted rough read of a document photo'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const HealthReportReaderScreen(),
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  key: const Key('familyModeTile'),
+                  leading: const Icon(Icons.family_restroom_outlined),
+                  title: const Text('Family Mode'),
+                  subtitle: const Text("Keep an eye on a loved one's wellness"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const FamilyModeScreen()),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
           const _SectionLabel('Subscription'),
-          const Card(
+          Card(
             child: ListTile(
-              leading: Icon(Icons.workspace_premium_outlined),
-              title: Text('HWC Premium'),
-              subtitle: Text(
-                'AI Health Coach · Food Scan AI · Advanced Insights · '
-                'Family Mode — Coming soon',
+              key: const Key('subscriptionTile'),
+              leading: const Icon(Icons.workspace_premium_outlined),
+              title: const Text('HWC Premium'),
+              subtitle: const Text('AI Coach · Advanced Insights · No ads'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
               ),
-              trailing: Icon(Icons.chevron_right),
-              onTap: null,
             ),
           ),
           const SizedBox(height: 16),
           const _SectionLabel('Coming Soon'),
           const Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: Icon(Icons.description_outlined),
-                  title: Text('Health Report Reader'),
-                  subtitle: Text('Upload and summarize lab reports'),
-                  enabled: false,
-                ),
-                Divider(height: 1),
-                ListTile(
-                  leading: Icon(Icons.family_restroom_outlined),
-                  title: Text('Family Mode'),
-                  subtitle: Text("Keep an eye on a loved one's wellness"),
-                  enabled: false,
-                ),
-                Divider(height: 1),
-                ListTile(
-                  leading: Icon(Icons.watch_outlined),
-                  title: Text('Wearable Sync'),
-                  subtitle: Text('Apple Health / Google Fit integration'),
-                  enabled: false,
-                ),
-              ],
+            child: ListTile(
+              leading: Icon(Icons.watch_outlined),
+              title: Text('Wearable Sync'),
+              subtitle: Text('Apple Health / Google Fit integration'),
+              enabled: false,
             ),
           ),
           const SizedBox(height: 16),

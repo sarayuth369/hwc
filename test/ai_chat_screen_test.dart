@@ -120,4 +120,21 @@ void main() {
 
     expect(find.text('ok now'), findsOneWidget);
   });
+
+  testWidgets(
+      'tapping the mic button hits the real voice endpoint and shows its honest message',
+      (tester) async {
+    await tester.pumpWidget(
+      await _wrap(
+        userService: FakeCurrentUserService(),
+        aiRepository: FakeAiRepository(),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('aiChatVoiceButton')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('aiChatVoiceSnackBar')), findsOneWidget);
+    expect(find.text('This isn\'t available yet.'), findsOneWidget);
+  });
 }

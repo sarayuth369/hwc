@@ -7,4 +7,18 @@
 abstract class AiRepository {
   Future<Map<String, dynamic>> chat(Map<String, dynamic> requestBody);
   Future<Map<String, dynamic>> insight(Map<String, dynamic> requestBody);
+
+  /// Real Workers AI vision analysis (`/api/ai/image/analyze`) — used by
+  /// the Food Scanner and Health Report Reader. `requestBody` is
+  /// `{imageBase64, purpose: "food"|"document"}`; the response is
+  /// `{description}`.
+  Future<Map<String, dynamic>> analyzeImage(Map<String, dynamic> requestBody);
+
+  /// Voice input/output seam. The Worker's voice provider is a documented
+  /// no-op today (`NullVoiceProvider`), so these currently resolve to a
+  /// real 501 from the server — this is intentionally wired to the real
+  /// endpoint rather than left unimplemented, so the UI shows an honest
+  /// server-sourced "not available yet" message instead of a dead button.
+  Future<Map<String, dynamic>> transcribeVoice(Map<String, dynamic> requestBody);
+  Future<Map<String, dynamic>> synthesizeVoice(Map<String, dynamic> requestBody);
 }

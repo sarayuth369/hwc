@@ -7,7 +7,10 @@ import '../core/config/env.dart';
 import '../core/theme/app_theme_mode_controller.dart';
 import '../data/ai/http_ai_repository.dart';
 import '../data/local/chat_history_store.dart';
+import '../data/local/free_tier_subscription_repository.dart';
 import '../data/local/metric_write_queue.dart';
+import '../data/local/notification_service.dart';
+import '../data/local/null_family_repository.dart';
 import '../data/local/sync_service.dart';
 import '../data/supabase/auth_repository_impl.dart';
 import '../data/supabase/current_user_service_impl.dart';
@@ -20,9 +23,11 @@ import '../domain/repositories/ai_repository.dart';
 import '../domain/repositories/auth_repository.dart';
 import '../domain/repositories/current_user_service.dart';
 import '../domain/repositories/daily_summary_repository.dart';
+import '../domain/repositories/family_repository.dart';
 import '../domain/repositories/health_goals_repository.dart';
 import '../domain/repositories/metric_repositories.dart';
 import '../domain/repositories/profile_repository.dart';
+import '../domain/repositories/subscription_repository.dart';
 
 /// Wires the concrete Supabase-backed repositories behind their domain
 /// interfaces. Screens only ever depend on the interfaces imported above —
@@ -58,6 +63,15 @@ class AppProviders extends StatelessWidget {
         ),
         Provider<ChatHistoryStore>(
           create: (_) => ChatHistoryStore(prefs),
+        ),
+        Provider<NotificationService>(
+          create: (_) => NotificationService(prefs),
+        ),
+        Provider<SubscriptionRepository>(
+          create: (_) => FreeTierSubscriptionRepository(),
+        ),
+        Provider<FamilyRepository>(
+          create: (_) => NullFamilyRepository(),
         ),
         Provider<SyncService>.value(value: syncService),
         Provider<CurrentUserService>.value(value: currentUserService),
