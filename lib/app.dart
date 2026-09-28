@@ -20,7 +20,7 @@ class HealthApp extends StatelessWidget {
         : const AppTheme();
 
     return MaterialApp(
-      title: 'AI Health Companion',
+      title: 'Health-Wellness-Companion',
       debugShowCheckedModeBanner: false,
       theme: tokens.toThemeData(),
       darkTheme: tokens.toDarkThemeData(),

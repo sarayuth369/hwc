@@ -42,6 +42,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate launcher icon
+        # Writes android/app/src/main/res/mipmap-*/ic_launcher.png from
+        # assets/icon/app_icon.png -- also gitignored/regenerated, needs
+        # pub get done first (see scripts/generate_launcher_icons.sh).
+        run: ./scripts/generate_launcher_icons.sh
+
       - name: Scan for secrets in the Flutter source tree
         run: |
           if grep -RInE "(sk-[a-zA-Z0-9]{20,}|service_role|SUPABASE_SERVICE_ROLE|AIza[0-9A-Za-z_-]{35})" lib/ test/ pubspec.yaml; then
