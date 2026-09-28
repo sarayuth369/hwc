@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Ensure platform scaffolding exists
+        # `flutter create .` on an existing project only fills in missing
+        # platform folders (e.g. android/) — it does not touch pubspec.yaml
+        # or anything under lib/. This keeps generated Gradle/wrapper
+        # binaries out of version control while still giving CI a real
+        # buildable android/ directory every run. It also regenerates a
+        # stock test/widget_test.dart (referencing a nonexistent MyApp
+        # counter widget) every time, which must be removed before `flutter
+        # test` runs against our real widget tests.
+        run: |
+          flutter create --platforms=android --org com.bkknex .
+          rm -f test/widget_test.dart
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Scan for secrets in the Flutter source tree
+        run: |
+          if grep -RInE "(sk-[a-zA-Z0-9]{20,}|service_role|SUPABASE_SERVICE_ROLE|AIza[0-9A-Za-z_-]{35})" lib/ test/ pubspec.yaml; then
+            echo "Potential secret found in source tree" >&2
+            exit 1
+          fi
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build debug APK
+        run: flutter build apk --debug

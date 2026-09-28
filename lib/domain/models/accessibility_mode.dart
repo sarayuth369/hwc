@@ -1,0 +1,1 @@
+enum AccessibilityMode { normal, senior }
