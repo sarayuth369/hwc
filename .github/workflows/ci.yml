@@ -34,6 +34,11 @@ jobs:
         # re-applies what the app actually needs (see scripts/patch_android_manifest.sh).
         run: ./scripts/patch_android_manifest.sh
 
+      - name: Patch Android build.gradle (core library desugaring)
+        # Required by flutter_local_notifications; same gitignore/regeneration
+        # problem as the manifest above (see scripts/patch_android_build_gradle.sh).
+        run: ./scripts/patch_android_build_gradle.sh
+
       - name: Install dependencies
         run: flutter pub get
 

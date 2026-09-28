@@ -46,14 +46,15 @@ Backend: Supabase (schema/RLS) + a Cloudflare Worker AI gateway (`bkknex-worker`
 
 ## Running
 
-If `android/` doesn't exist yet (fresh clone) or you deleted it, regenerate it and patch its
-manifest for the permissions this app needs (camera for Food Scanner/Health Report Reader,
-notifications for reminders) — `android/` is gitignored, so this must be re-run after every
-`flutter create`:
+If `android/` doesn't exist yet (fresh clone) or you deleted it, regenerate it and patch it for
+what this app needs (camera permission for Food Scanner/Health Report Reader, notification
+permission for reminders, core library desugaring for `flutter_local_notifications`) —
+`android/` is gitignored, so this must be re-run after every `flutter create`:
 
 ```
 flutter create --platforms=android --org com.bkknex .
 ./scripts/patch_android_manifest.sh
+./scripts/patch_android_build_gradle.sh
 ```
 
 ```
