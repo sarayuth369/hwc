@@ -45,6 +45,15 @@ if ! grep -q "android:label=\"$APP_LABEL\"" "$MANIFEST"; then
   changed=1
 fi
 
+# Must stay byte-identical to Env.authRedirectUrl's scheme/host (see
+# lib/core/config/env.dart). Deliberately NOT the app's applicationId
+# (com.bkknex.bkknex_health_app) -- that string's underscores are illegal
+# in a URI scheme per RFC 3986, which made Supabase's GoTrue backend
+# silently reject the redirect_to allow-list match and fall back to Site
+# URL. Hyphens are valid scheme characters and Android's manifest scheme
+# matching is a plain string, so it doesn't need to match applicationId.
+DEEPLINK_SCHEME="com.bkknex.bkknex-health-app"
+
 if ! grep -q 'login-callback' "$MANIFEST"; then
   # Deep link for Supabase Auth email confirmation / password reset --
   # see Env.authRedirectUrl. Inserted after MainActivity's existing
@@ -55,7 +64,7 @@ if ! grep -q 'login-callback' "$MANIFEST"; then
                 <action android:name="android.intent.action.VIEW"/>\
                 <category android:name="android.intent.category.DEFAULT"/>\
                 <category android:name="android.intent.category.BROWSABLE"/>\
-                <data android:scheme="com.bkknex.bkknex_health_app" android:host="login-callback"/>\
+                <data android:scheme="'"$DEEPLINK_SCHEME"'" android:host="login-callback"/>\
             </intent-filter>
   }' "$MANIFEST"
   changed=1

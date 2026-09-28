@@ -20,19 +20,35 @@ fi
 
 if grep -q "isCoreLibraryDesugaringEnabled" "$GRADLE_FILE"; then
   echo "Core library desugaring already enabled -- nothing to do."
-  exit 0
-fi
+else
+  # Enable desugaring inside the existing compileOptions block.
+  sed -i '/targetCompatibility = JavaVersion.VERSION_17/a\        isCoreLibraryDesugaringEnabled = true' "$GRADLE_FILE"
 
-# Enable desugaring inside the existing compileOptions block.
-sed -i '/targetCompatibility = JavaVersion.VERSION_17/a\        isCoreLibraryDesugaringEnabled = true' "$GRADLE_FILE"
-
-# Add the desugaring dependency as its own top-level block (version pinned
-# to what flutter_local_notifications' own example project uses).
-cat >> "$GRADLE_FILE" <<'EOF'
+  # Add the desugaring dependency as its own top-level block (version pinned
+  # to what flutter_local_notifications' own example project uses).
+  cat >> "$GRADLE_FILE" <<'EOF'
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 EOF
 
-echo "Core library desugaring enabled in $GRADLE_FILE"
+  echo "Core library desugaring enabled in $GRADLE_FILE"
+fi
+
+# Work around a real, reproducible Kotlin/Gradle build-tools-api bug hit on
+# this project's Windows dev machine: every Kotlin-compiling plugin module
+# (posthog_flutter, url_launcher_android, image_picker_android,
+# shared_preferences_android, package_info_plus, ...) failed
+# `compileDebugKotlin` with "Could not close incremental caches" -- the
+# compiler's own incremental cache `.tab` files get locked (most likely by
+# antivirus real-time scanning) right as Kotlin tries to close/rename them
+# after a successful compile. Disabling Kotlin's incremental compilation
+# avoids that close-and-rename step entirely; it only costs some build
+# speed, never correctness. gradle.properties lives under the gitignored
+# android/ directory, so this needs the same patch-script treatment.
+PROPERTIES_FILE="android/gradle.properties"
+if [ -f "$PROPERTIES_FILE" ] && ! grep -q "kotlin.incremental" "$PROPERTIES_FILE"; then
+  echo "kotlin.incremental=false" >> "$PROPERTIES_FILE"
+  echo "Disabled Kotlin incremental compilation in $PROPERTIES_FILE"
+fi

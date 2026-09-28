@@ -37,8 +37,22 @@ class Env {
   /// directly instead of falling back to whatever placeholder "Site URL"
   /// is set in the Supabase dashboard (e.g. `localhost:3000`, which no
   /// device can ever reach). Not a secret — just a fixed scheme string,
-  /// namespaced to this app's own application ID to avoid colliding with
-  /// another app's custom scheme on the same device.
+  /// loosely namespaced to this app to avoid colliding with another app's
+  /// custom scheme on the same device.
+  ///
+  /// Deliberately NOT identical to the Android `applicationId`
+  /// (`com.bkknex.bkknex_health_app`): that string contains underscores,
+  /// which RFC 3986 forbids in a URI scheme (`ALPHA *( ALPHA / DIGIT / "+" /
+  /// "-" / "." )`). `Uri.parse('com.bkknex.bkknex_health_app://...')`
+  /// throws `FormatException: Illegal scheme character` in Dart, and the
+  /// same RFC-3986 scheme grammar is what Go's `net/url` (and therefore
+  /// Supabase's GoTrue backend) uses to validate `redirect_to` against the
+  /// dashboard's Redirect URLs allow-list. A redirect URL with an invalid
+  /// scheme fails that server-side match silently — GoTrue falls back to
+  /// Site URL with no error surfaced to the client — which reproduces
+  /// exactly the "confirmation email links to localhost" symptom this
+  /// constant exists to fix. Hyphens are valid scheme characters, so this
+  /// uses `bkknex-health-app` instead of `bkknex_health_app`.
   static const String authRedirectUrl =
-      'com.bkknex.bkknex_health_app://login-callback/';
+      'com.bkknex.bkknex-health-app://login-callback/';
 }
