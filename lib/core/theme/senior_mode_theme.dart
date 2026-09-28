@@ -34,4 +34,13 @@ class SeniorModeTheme extends AppTheme {
 
   @override
   Color get onBackground => Colors.black;
+
+  @override
+  double get iconSize => 32;
+
+  @override
+  double get spacingMd => 20;
+
+  @override
+  double get spacingLg => 28;
 }

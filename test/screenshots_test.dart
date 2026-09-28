@@ -1,14 +1,20 @@
-// Renders the required onboarding -> Home -> Quick Action -> Senior Mode
+// Renders the required onboarding -> Home -> Quick Add -> Senior Mode
 // flow to real PNG files via Flutter's golden-file test harness. This VPS
 // has no Android emulator/display, so golden files (rendered by the test
 // framework's software rasterizer, not a live device) are the literal
 // screenshot evidence for BKK-78's acceptance criteria.
+//
+// Regenerated for the Phase 1 UI/UX redesign (new theme tokens, bottom-nav
+// shell, restyled screens) — the pixel diffs against the pre-redesign
+// baseline are expected and intentional, not a regression. See
+// D:\FlutterProjects\gpt-claude\HWC_REPORT.md for the redesign record.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:provider/single_child_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bkknex_health_app/core/accessibility/accessibility_mode_controller.dart';
@@ -17,19 +23,17 @@ import 'package:bkknex_health_app/core/theme/senior_mode_theme.dart';
 import 'package:bkknex_health_app/domain/models/accessibility_mode.dart';
 import 'package:bkknex_health_app/domain/models/wellness_summary.dart';
 import 'package:bkknex_health_app/domain/repositories/current_user_service.dart';
-import 'package:bkknex_health_app/domain/repositories/daily_summary_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/metric_repositories.dart';
-import 'package:bkknex_health_app/domain/repositories/profile_repository.dart';
 import 'package:bkknex_health_app/presentation/screens/home/home_screen.dart';
 import 'package:bkknex_health_app/presentation/screens/onboarding/onboarding_screen.dart';
-import 'package:bkknex_health_app/presentation/screens/quick_actions/quick_actions_screen.dart';
+import 'package:bkknex_health_app/presentation/screens/quick_actions/quick_add_sheet.dart';
 
 import 'support/fake_repositories.dart';
 
 Widget _themedApp(
   Widget home, {
   required AccessibilityModeController controller,
-  required List<InheritedProvider> extraProviders,
+  required List<SingleChildWidget> extraProviders,
 }) {
   return MultiProvider(
     providers: [
@@ -88,12 +92,7 @@ void main() {
     await tester.pumpWidget(_themedApp(
       const OnboardingScreen(),
       controller: AccessibilityModeController(prefs),
-      extraProviders: [
-        Provider<ProfileRepository>.value(value: FakeProfileRepository()),
-        Provider<DailySummaryRepository>.value(
-          value: FakeDailySummaryRepository(),
-        ),
-      ],
+      extraProviders: fullProviderSet(),
     ));
     await tester.pumpAndSettle();
     await expectLater(
@@ -117,11 +116,9 @@ void main() {
       });
 
     await tester.pumpWidget(_themedApp(
-      const HomeScreen(),
+      const Scaffold(body: HomeScreen()),
       controller: AccessibilityModeController(prefs),
-      extraProviders: [
-        Provider<DailySummaryRepository>.value(value: summaryRepo),
-      ],
+      extraProviders: fullProviderSet(dailySummaryRepository: summaryRepo),
     ));
     await tester.pumpAndSettle();
     await expectLater(
@@ -130,20 +127,33 @@ void main() {
     );
   });
 
-  testWidgets('screenshot: quick action after logging water', (tester) async {
+  testWidgets('screenshot: quick add after logging water', (tester) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     final prefs = await SharedPreferences.getInstance();
     final waterRepo = FakeWaterRepository();
 
     await tester.pumpWidget(_themedApp(
-      const QuickActionsScreen(),
+      Scaffold(
+        body: Builder(
+          builder: (context) => FilledButton(
+            onPressed: () => showQuickAddSheet(context),
+            child: const Text('Open Quick Add'),
+          ),
+        ),
+      ),
       controller: AccessibilityModeController(prefs),
       extraProviders: [
         Provider<CurrentUserService>.value(value: FakeCurrentUserService()),
         Provider<WaterRepository>.value(value: waterRepo),
+        Provider<NutritionRepository>.value(value: FakeNutritionRepository()),
+        Provider<ActivityRepository>.value(value: FakeActivityRepository()),
+        Provider<WeightRepository>.value(value: FakeWeightRepository()),
+        Provider<SleepRepository>.value(value: FakeSleepRepository()),
       ],
     ));
-    await tester.tap(find.byKey(const Key('logWater250Button')));
+    await tester.tap(find.text('Open Quick Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('quickAddWaterRow')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(MaterialApp),
@@ -157,13 +167,9 @@ void main() {
     final controller = AccessibilityModeController(prefs);
 
     await tester.pumpWidget(_themedApp(
-      const HomeScreen(),
+      const Scaffold(body: HomeScreen()),
       controller: controller,
-      extraProviders: [
-        Provider<DailySummaryRepository>.value(
-          value: FakeDailySummaryRepository(),
-        ),
-      ],
+      extraProviders: fullProviderSet(),
     ));
     await tester.pumpAndSettle();
 

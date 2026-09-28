@@ -20,7 +20,7 @@ Widget _wrap({
       Provider<AiRepository>.value(value: aiRepository),
       Provider<ProfileRepository>.value(value: FakeProfileRepository()),
     ],
-    child: const MaterialApp(home: AiChatScreen()),
+    child: const MaterialApp(home: Scaffold(body: AiChatScreen())),
   );
 }
 

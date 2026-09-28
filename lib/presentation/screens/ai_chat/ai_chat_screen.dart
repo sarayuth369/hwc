@@ -6,9 +6,28 @@ import '../../../domain/repositories/ai_repository.dart';
 import '../../../domain/repositories/current_user_service.dart';
 import '../../../domain/repositories/profile_repository.dart';
 
-/// A calm, single-question AI chat entry point (contract 1: the client only
-/// ever calls the Worker's documented `/api/ai/chat` route and relays what
-/// it returns — no safety logic, diagnosis, or prescribing happens here).
+const _suggestedPrompts = [
+  'Is this food good for me?',
+  'How can I sleep better?',
+  'What should I eat today?',
+  'Create a walking plan for me',
+];
+
+class _ChatMessage {
+  const _ChatMessage({
+    required this.text,
+    required this.fromUser,
+    this.requiresProfessionalCare = false,
+  });
+
+  final String text;
+  final bool fromUser;
+  final bool requiresProfessionalCare;
+}
+
+/// A calm chat-bubble AI Talk screen (contract 1: the client only ever
+/// calls the Worker's documented `/api/ai/chat` route and relays what it
+/// returns — no safety logic, diagnosis, or prescribing happens here).
 class AiChatScreen extends StatefulWidget {
   const AiChatScreen({super.key});
 
@@ -18,9 +37,9 @@ class AiChatScreen extends StatefulWidget {
 
 class _AiChatScreenState extends State<AiChatScreen> {
   final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+  final _messages = <_ChatMessage>[];
   bool _isLoading = false;
-  String? _reply;
-  bool _requiresProfessionalCare = false;
   AiChatFailure? _failure;
   String? _lastMessage;
   String? _conversationId;
@@ -28,6 +47,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -45,6 +65,17 @@ class _AiChatScreenState extends State<AiChatScreen> {
     return {'age': age};
   }
 
+  void _scrollToEnd() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   Future<void> _send([String? message]) async {
     final text = message ?? _controller.text.trim();
     if (text.isEmpty) return;
@@ -56,7 +87,10 @@ class _AiChatScreenState extends State<AiChatScreen> {
       _isLoading = true;
       _failure = null;
       _lastMessage = text;
+      _messages.add(_ChatMessage(text: text, fromUser: true));
+      _controller.clear();
     });
+    _scrollToEnd();
 
     try {
       final healthContext = await _buildHealthContext(profileRepository);
@@ -68,12 +102,15 @@ class _AiChatScreenState extends State<AiChatScreen> {
       if (!mounted) return;
       final safetyFlag = response['safetyFlag'] as Map<String, dynamic>?;
       setState(() {
-        _reply = response['reply'] as String?;
         _conversationId = response['conversationId'] as String?;
-        _requiresProfessionalCare =
-            safetyFlag?['requiresProfessionalCare'] == true;
-        _controller.clear();
+        _messages.add(_ChatMessage(
+          text: response['reply'] as String? ?? '',
+          fromUser: false,
+          requiresProfessionalCare:
+              safetyFlag?['requiresProfessionalCare'] == true,
+        ));
       });
+      _scrollToEnd();
     } on AiChatFailure catch (failure) {
       if (!mounted) return;
       setState(() => _failure = failure);
@@ -84,71 +121,171 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final userId = context.read<CurrentUserService>().currentUserId;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Ask AI')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: userId == null
-            ? const Text(
-                'Sign in to use AI chat.',
-                key: Key('aiChatSignInMessage'),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_reply != null) ...[
-                    Text(_reply!, key: const Key('aiChatReply')),
-                    if (_requiresProfessionalCare) ...[
-                      const SizedBox(height: 12),
-                      const Text(
-                        'This may need a healthcare professional. '
-                        'Please consider talking to one.',
-                        key: Key('aiChatProfessionalCareNotice'),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                  ],
-                  if (_failure != null) ...[
-                    Text(
-                      _failure!.message,
-                      key: const Key('aiChatErrorMessage'),
-                    ),
-                    const SizedBox(height: 8),
-                    OutlinedButton(
-                      key: const Key('aiChatRetryButton'),
-                      onPressed: _lastMessage == null
-                          ? null
-                          : () => _send(_lastMessage),
-                      child: const Text('Try again'),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  TextField(
+    if (userId == null) {
+      return const Center(
+        child: Text(
+          'Sign in to use AI chat.',
+          key: Key('aiChatSignInMessage'),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: _messages.isEmpty
+              ? _EmptyState(onPromptTap: (prompt) => _send(prompt))
+              : ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _messages.length,
+                  itemBuilder: (context, index) =>
+                      _MessageBubble(message: _messages[index]),
+                ),
+        ),
+        if (_failure != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _failure!.message,
+                    key: const Key('aiChatErrorMessage'),
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                ),
+                TextButton(
+                  key: const Key('aiChatRetryButton'),
+                  onPressed: _lastMessage == null ? null : () => _send(_lastMessage),
+                  child: const Text('Try again'),
+                ),
+              ],
+            ),
+          ),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                const IconButton(
+                  key: Key('aiChatVoiceButton'),
+                  onPressed: null,
+                  tooltip: 'Voice — coming soon',
+                  icon: Icon(Icons.mic_none),
+                ),
+                Expanded(
+                  child: TextField(
                     key: const Key('aiChatInput'),
                     controller: _controller,
                     enabled: !_isLoading,
-                    decoration: const InputDecoration(
-                      labelText: 'Ask a question',
-                    ),
+                    decoration: const InputDecoration(hintText: 'Ask a question'),
                     onSubmitted: (_) => _send(),
                   ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    key: const Key('aiChatSendButton'),
-                    onPressed: _isLoading ? null : () => _send(),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Send'),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                _isLoading
+                    ? const SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : IconButton(
+                        key: const Key('aiChatSendButton'),
+                        onPressed: () => _send(),
+                        icon: Icon(Icons.send, color: theme.colorScheme.primary),
+                      ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.onPromptTap});
+
+  final ValueChanged<String> onPromptTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.smart_toy_outlined, size: 48, color: theme.colorScheme.primary),
+          const SizedBox(height: 12),
+          Text('How can I help you today?', style: theme.textTheme.titleLarge),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              for (final prompt in _suggestedPrompts)
+                ActionChip(
+                  label: Text(prompt),
+                  onPressed: () => onPromptTap(prompt),
+                ),
+            ],
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _MessageBubble extends StatelessWidget {
+  const _MessageBubble({required this.message});
+
+  final _ChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isUser = message.fromUser;
+    return Column(
+      crossAxisAlignment:
+          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.75,
+          ),
+          decoration: BoxDecoration(
+            color: isUser
+                ? theme.colorScheme.primary
+                : theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            message.text,
+            key: isUser ? null : const Key('aiChatReply'),
+            style: TextStyle(
+              color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+            ),
+          ),
+        ),
+        if (message.requiresProfessionalCare)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'This may need a healthcare professional. Please consider talking to one.',
+              key: const Key('aiChatProfessionalCareNotice'),
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+      ],
     );
   }
 }

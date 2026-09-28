@@ -1,3 +1,8 @@
+import 'dart:async';
+
+import 'package:provider/provider.dart';
+import 'package:provider/single_child_widget.dart';
+
 import 'package:bkknex_health_app/domain/models/activity_record.dart';
 import 'package:bkknex_health_app/domain/models/ai_chat_failure.dart';
 import 'package:bkknex_health_app/domain/models/nutrition_record.dart';
@@ -8,10 +13,48 @@ import 'package:bkknex_health_app/domain/models/water_record.dart';
 import 'package:bkknex_health_app/domain/models/weight_record.dart';
 import 'package:bkknex_health_app/domain/models/wellness_summary.dart';
 import 'package:bkknex_health_app/domain/repositories/ai_repository.dart';
+import 'package:bkknex_health_app/domain/repositories/auth_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/current_user_service.dart';
 import 'package:bkknex_health_app/domain/repositories/daily_summary_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/metric_repositories.dart';
 import 'package:bkknex_health_app/domain/repositories/profile_repository.dart';
+
+class FakeAuthRepository implements AuthRepository {
+  final _controller = StreamController<bool>.broadcast();
+  bool _signedIn = true;
+
+  @override
+  bool get isSignedIn => _signedIn;
+
+  @override
+  Stream<bool> get authStateChanges => _controller.stream;
+
+  void setSignedIn(bool signedIn) {
+    _signedIn = signedIn;
+    _controller.add(signedIn);
+  }
+
+  @override
+  Future<void> signUp({required String email, required String password}) async {
+    setSignedIn(true);
+  }
+
+  @override
+  Future<void> signInWithPassword({
+    required String email,
+    required String password,
+  }) async {
+    setSignedIn(true);
+  }
+
+  @override
+  Future<void> sendPasswordResetEmail(String email) async {}
+
+  @override
+  Future<void> signOut() async {
+    setSignedIn(false);
+  }
+}
 
 class FakeCurrentUserService implements CurrentUserService {
   @override
@@ -52,7 +95,7 @@ class FakeProfileRepository implements ProfileRepository {
 
   @override
   Future<UserProfile?> fetchProfile() async =>
-      const UserProfile(userId: 'test-user', displayName: null);
+      UserProfile(userId: 'test-user', displayName: displayName);
 
   @override
   Future<UserPreferences?> fetchPreferences() async => preferences;
@@ -124,4 +167,54 @@ class FakeNutritionRepository implements NutritionRepository {
 
   @override
   Future<List<NutritionRecord>> recent({int days = 7}) async => logged;
+}
+
+/// Every provider `HomeShell`/`AuthGate` need, wired to fresh fakes. Widget
+/// tests that pump the real navigation shell (whose `IndexedStack` builds
+/// all four tabs immediately) need this full set, not just the providers
+/// for the tab under test.
+List<SingleChildWidget> fullProviderSet({
+  FakeCurrentUserService? currentUserService,
+  FakeAuthRepository? authRepository,
+  FakeProfileRepository? profileRepository,
+  FakeAiRepository? aiRepository,
+  FakeDailySummaryRepository? dailySummaryRepository,
+  FakeSleepRepository? sleepRepository,
+  FakeActivityRepository? activityRepository,
+  FakeWaterRepository? waterRepository,
+  FakeWeightRepository? weightRepository,
+  FakeNutritionRepository? nutritionRepository,
+}) {
+  return [
+    Provider<CurrentUserService>.value(
+      value: currentUserService ?? FakeCurrentUserService(),
+    ),
+    Provider<AuthRepository>.value(
+      value: authRepository ?? FakeAuthRepository(),
+    ),
+    Provider<ProfileRepository>.value(
+      value: profileRepository ?? FakeProfileRepository(),
+    ),
+    Provider<AiRepository>.value(
+      value: aiRepository ?? FakeAiRepository(),
+    ),
+    Provider<DailySummaryRepository>.value(
+      value: dailySummaryRepository ?? FakeDailySummaryRepository(),
+    ),
+    Provider<SleepRepository>.value(
+      value: sleepRepository ?? FakeSleepRepository(),
+    ),
+    Provider<ActivityRepository>.value(
+      value: activityRepository ?? FakeActivityRepository(),
+    ),
+    Provider<WaterRepository>.value(
+      value: waterRepository ?? FakeWaterRepository(),
+    ),
+    Provider<WeightRepository>.value(
+      value: weightRepository ?? FakeWeightRepository(),
+    ),
+    Provider<NutritionRepository>.value(
+      value: nutritionRepository ?? FakeNutritionRepository(),
+    ),
+  ];
 }

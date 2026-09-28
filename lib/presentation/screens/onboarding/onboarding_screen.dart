@@ -7,7 +7,7 @@ import '../../../core/analytics/analytics_events.dart';
 import '../../../core/analytics/analytics_service.dart';
 import '../../../domain/repositories/profile_repository.dart';
 import '../../widgets/senior_mode_toggle.dart';
-import '../home/home_screen.dart';
+import '../home/home_shell.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -34,7 +34,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     unawaited(_analytics.capture(AnalyticsEvent.onboardingCompleted));
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      MaterialPageRoute(builder: (_) => const HomeShell()),
     );
   }
 
