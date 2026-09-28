@@ -1,8 +1,9 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/accessibility/accessibility_mode_controller.dart';
+import '../core/config/env.dart';
 import '../data/ai/http_ai_repository.dart';
 import '../data/local/metric_write_queue.dart';
 import '../data/local/sync_service.dart';
@@ -34,6 +35,10 @@ class AppProviders extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!Env.hasSupabaseConfig) {
+      return const _BackendNotConfiguredApp();
+    }
+
     final client = supabase;
     final queue = MetricWriteQueue(prefs);
     final syncService = SyncService(client, queue)..start();
@@ -77,6 +82,35 @@ class AppProviders extends StatelessWidget {
         ),
       ],
       child: child,
+    );
+  }
+}
+
+/// Shown instead of crashing when this build has no `SUPABASE_URL`/
+/// `SUPABASE_ANON_KEY` (see `Env.hasSupabaseConfig`) — e.g. a debug build
+/// made without `--dart-define` for a pure UI review. No provider, no
+/// `Supabase.instance` access; nothing below this widget depends on a
+/// backend being configured.
+class _BackendNotConfiguredApp extends StatelessWidget {
+  const _BackendNotConfiguredApp();
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'This build has no backend configured.\n'
+              'Rebuild with SUPABASE_URL and SUPABASE_ANON_KEY.',
+              key: Key('backendNotConfiguredMessage'),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
