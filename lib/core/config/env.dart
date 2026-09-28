@@ -30,4 +30,15 @@ class Env {
 
   static bool get hasSupabaseConfig =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+
+  /// Deep link the app registers natively (see AndroidManifest's intent
+  /// filter, patched in via `scripts/patch_android_manifest.sh`) so Supabase
+  /// Auth's email-confirmation / password-reset links open this app
+  /// directly instead of falling back to whatever placeholder "Site URL"
+  /// is set in the Supabase dashboard (e.g. `localhost:3000`, which no
+  /// device can ever reach). Not a secret — just a fixed scheme string,
+  /// namespaced to this app's own application ID to avoid colliding with
+  /// another app's custom scheme on the same device.
+  static const String authRedirectUrl =
+      'com.bkknex.bkknex_health_app://login-callback/';
 }

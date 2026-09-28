@@ -45,6 +45,22 @@ if ! grep -q "android:label=\"$APP_LABEL\"" "$MANIFEST"; then
   changed=1
 fi
 
+if ! grep -q 'login-callback' "$MANIFEST"; then
+  # Deep link for Supabase Auth email confirmation / password reset --
+  # see Env.authRedirectUrl. Inserted after MainActivity's existing
+  # MAIN/LAUNCHER intent-filter, still inside the same <activity> block.
+  sed -i '/<category android:name="android.intent.category.LAUNCHER"\/>/,/<\/intent-filter>/{
+    /<\/intent-filter>/a\
+            <intent-filter android:autoVerify="false">\
+                <action android:name="android.intent.action.VIEW"/>\
+                <category android:name="android.intent.category.DEFAULT"/>\
+                <category android:name="android.intent.category.BROWSABLE"/>\
+                <data android:scheme="com.bkknex.bkknex_health_app" android:host="login-callback"/>\
+            </intent-filter>
+  }' "$MANIFEST"
+  changed=1
+fi
+
 if [ "$changed" -eq 1 ]; then
   echo "Manifest permissions patched: $MANIFEST"
 else

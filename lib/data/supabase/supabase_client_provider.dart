@@ -9,6 +9,12 @@ Future<void> initSupabase() async {
   await Supabase.initialize(
     url: Env.supabaseUrl,
     anonKey: Env.supabaseAnonKey,
+    // PKCE lets the SDK's own deep-link listener automatically complete a
+    // sign-up/reset confirmation redirect (a `?code=...` link) once it's
+    // opened via the native intent filter — see Env.authRedirectUrl.
+    authOptions: const FlutterAuthClientOptions(
+      authFlowType: AuthFlowType.pkce,
+    ),
   );
 }
 
