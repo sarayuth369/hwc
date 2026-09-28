@@ -6,6 +6,7 @@ import '../core/accessibility/accessibility_mode_controller.dart';
 import '../core/config/env.dart';
 import '../core/theme/app_theme_mode_controller.dart';
 import '../data/ai/http_ai_repository.dart';
+import '../data/local/chat_history_store.dart';
 import '../data/local/metric_write_queue.dart';
 import '../data/local/sync_service.dart';
 import '../data/supabase/auth_repository_impl.dart';
@@ -54,6 +55,9 @@ class AppProviders extends StatelessWidget {
         ),
         ChangeNotifierProvider(
           create: (_) => AppThemeModeController(prefs),
+        ),
+        Provider<ChatHistoryStore>(
+          create: (_) => ChatHistoryStore(prefs),
         ),
         Provider<SyncService>.value(value: syncService),
         Provider<CurrentUserService>.value(value: currentUserService),

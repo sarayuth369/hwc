@@ -6,13 +6,13 @@ import 'package:provider/provider.dart';
 import '../../../core/analytics/analytics_events.dart';
 import '../../../core/analytics/analytics_service.dart';
 import '../../../domain/models/activity_record.dart';
-import '../../../domain/models/nutrition_record.dart';
 import '../../../domain/models/sleep_record.dart';
 import '../../../domain/models/water_record.dart';
 import '../../../domain/models/weight_record.dart';
 import '../../../domain/repositories/current_user_service.dart';
 import '../../../domain/repositories/metric_repositories.dart';
 import '../../widgets/confirmation_dialog.dart';
+import '../food_scanner/food_scanner_screen.dart';
 import '../health/health_screen.dart';
 
 /// Opens the icon-led Quick Add sheet (one row per metric type, each logs a
@@ -60,27 +60,13 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
     setState(() => _status = 'Logged 250ml of water.');
   }
 
-  Future<void> _logFood() async {
+  void _openFoodScanner() {
     final userId = _requireUserId();
     if (userId == null) return;
-    final hour = DateTime.now().hour;
-    final mealType = hour < 11
-        ? MealType.breakfast
-        : hour < 16
-            ? MealType.lunch
-            : hour < 21
-                ? MealType.dinner
-                : MealType.snack;
-    await context.read<NutritionRepository>().logNutrition(
-          NutritionRecord(
-            userId: userId,
-            loggedAt: DateTime.now(),
-            mealType: mealType,
-            description: 'Quick-added meal',
-          ),
-        );
-    if (!mounted) return;
-    setState(() => _status = 'Logged a meal. AI food scan is coming soon.');
+    Navigator.of(context).pop();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const FoodScannerScreen()),
+    );
   }
 
   Future<void> _logWalk() async {
@@ -176,8 +162,8 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
             _QuickAddRow(
               icon: Icons.restaurant_outlined,
               title: 'Food',
-              subtitle: 'Scan or add (AI scan coming soon)',
-              onTap: _logFood,
+              subtitle: 'Scan or add',
+              onTap: _openFoodScanner,
               actionKey: const Key('quickAddFoodRow'),
             ),
             _QuickAddRow(

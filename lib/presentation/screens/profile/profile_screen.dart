@@ -15,6 +15,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   late Future<UserProfile?> _profileFuture;
+  String? _displayNameOverride;
 
   @override
   void initState() {
@@ -28,13 +29,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // tree back to SignInScreen automatically — nothing to navigate here.
   }
 
+  Future<void> _editDisplayName(String current) async {
+    final controller = TextEditingController(text: current);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit name'),
+        content: TextField(
+          key: const Key('editDisplayNameField'),
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Display name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('saveDisplayNameButton'),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (newName == null || newName.isEmpty || !mounted) return;
+    await context.read<ProfileRepository>().updateDisplayName(newName);
+    if (!mounted) return;
+    setState(() => _displayNameOverride = newName);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return FutureBuilder<UserProfile?>(
       future: _profileFuture,
       builder: (context, snapshot) {
-        final displayName = snapshot.data?.displayName;
+        final displayName = _displayNameOverride ?? snapshot.data?.displayName;
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -47,12 +80,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Icon(Icons.person, size: 40, color: theme.colorScheme.primary),
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    (displayName == null || displayName.isEmpty)
-                        ? 'Your Profile'
-                        : displayName,
-                    key: const Key('profileDisplayName'),
-                    style: theme.textTheme.titleLarge,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        (displayName == null || displayName.isEmpty)
+                            ? 'Your Profile'
+                            : displayName,
+                        key: const Key('profileDisplayName'),
+                        style: theme.textTheme.titleLarge,
+                      ),
+                      IconButton(
+                        key: const Key('editDisplayNameButton'),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        onPressed: () => _editDisplayName(displayName ?? ''),
+                      ),
+                    ],
                   ),
                 ],
               ),

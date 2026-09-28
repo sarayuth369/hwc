@@ -15,5 +15,10 @@ abstract class AuthRepository {
 
   Future<void> sendPasswordResetEmail(String email);
 
+  /// Changes the signed-in user's password directly (as opposed to the
+  /// email-link reset flow) — Supabase Auth's `updateUser` already supports
+  /// this, no new backend needed.
+  Future<void> updatePassword(String newPassword);
+
   Future<void> signOut();
 }

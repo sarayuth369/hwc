@@ -92,7 +92,7 @@ void main() {
     await tester.pumpWidget(_themedApp(
       const OnboardingScreen(),
       controller: AccessibilityModeController(prefs),
-      extraProviders: fullProviderSet(),
+      extraProviders: fullProviderSet(prefs: prefs),
     ));
     await tester.pumpAndSettle();
     await expectLater(
@@ -118,7 +118,7 @@ void main() {
     await tester.pumpWidget(_themedApp(
       const Scaffold(body: HomeScreen()),
       controller: AccessibilityModeController(prefs),
-      extraProviders: fullProviderSet(dailySummaryRepository: summaryRepo),
+      extraProviders: fullProviderSet(prefs: prefs, dailySummaryRepository: summaryRepo),
     ));
     await tester.pumpAndSettle();
     await expectLater(
@@ -169,7 +169,7 @@ void main() {
     await tester.pumpWidget(_themedApp(
       const Scaffold(body: HomeScreen()),
       controller: controller,
-      extraProviders: fullProviderSet(),
+      extraProviders: fullProviderSet(prefs: prefs),
     ));
     await tester.pumpAndSettle();
 

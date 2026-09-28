@@ -28,7 +28,7 @@ void main() {
           ChangeNotifierProvider(
             create: (_) => AppThemeModeController(prefs),
           ),
-          ...fullProviderSet(profileRepository: profileRepo),
+          ...fullProviderSet(prefs: prefs, profileRepository: profileRepo),
         ],
         child: const MaterialApp(home: OnboardingScreen()),
       ),

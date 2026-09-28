@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bkknex_health_app/domain/models/wellness_summary.dart';
 import 'package:bkknex_health_app/presentation/screens/home/home_screen.dart';
@@ -8,8 +9,13 @@ import 'package:bkknex_health_app/presentation/screens/home/home_screen.dart';
 import 'support/fake_repositories.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('Home renders the Wellness Score from the summary repository',
       (tester) async {
+    final prefs = await SharedPreferences.getInstance();
     final summaryRepo = FakeDailySummaryRepository()
       ..summary = WellnessSummary.fromJson({
         'summary_date': '2026-09-26',
@@ -23,7 +29,7 @@ void main() {
 
     await tester.pumpWidget(
       MultiProvider(
-        providers: fullProviderSet(dailySummaryRepository: summaryRepo),
+        providers: fullProviderSet(prefs: prefs, dailySummaryRepository: summaryRepo),
         child: const MaterialApp(home: Scaffold(body: HomeScreen())),
       ),
     );

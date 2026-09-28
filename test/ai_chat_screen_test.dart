@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:bkknex_health_app/data/local/chat_history_store.dart';
 import 'package:bkknex_health_app/domain/models/ai_chat_failure.dart';
 import 'package:bkknex_health_app/domain/repositories/ai_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/current_user_service.dart';
@@ -10,15 +12,18 @@ import 'package:bkknex_health_app/presentation/screens/ai_chat/ai_chat_screen.da
 
 import 'support/fake_repositories.dart';
 
-Widget _wrap({
+Future<Widget> _wrap({
   required FakeCurrentUserService userService,
   required FakeAiRepository aiRepository,
-}) {
+}) async {
+  SharedPreferences.setMockInitialValues({});
+  final prefs = await SharedPreferences.getInstance();
   return MultiProvider(
     providers: [
       Provider<CurrentUserService>.value(value: userService),
       Provider<AiRepository>.value(value: aiRepository),
       Provider<ProfileRepository>.value(value: FakeProfileRepository()),
+      Provider<ChatHistoryStore>.value(value: ChatHistoryStore(prefs)),
     ],
     child: const MaterialApp(home: Scaffold(body: AiChatScreen())),
   );
@@ -28,7 +33,7 @@ void main() {
   testWidgets('shows sign-in message when signed out', (tester) async {
     final userService = FakeCurrentUserService()..currentUserId = null;
     await tester.pumpWidget(
-      _wrap(userService: userService, aiRepository: FakeAiRepository()),
+      await _wrap(userService: userService, aiRepository: FakeAiRepository()),
     );
 
     expect(find.byKey(const Key('aiChatSignInMessage')), findsOneWidget);
@@ -41,7 +46,7 @@ void main() {
       ..delay = const Duration(milliseconds: 50);
 
     await tester.pumpWidget(
-      _wrap(
+      await _wrap(
         userService: FakeCurrentUserService(),
         aiRepository: aiRepository,
       ),
@@ -72,7 +77,7 @@ void main() {
       };
 
     await tester.pumpWidget(
-      _wrap(
+      await _wrap(
         userService: FakeCurrentUserService(),
         aiRepository: aiRepository,
       ),
@@ -92,7 +97,7 @@ void main() {
     final aiRepository = FakeAiRepository()..failure = const AiNetworkFailure();
 
     await tester.pumpWidget(
-      _wrap(
+      await _wrap(
         userService: FakeCurrentUserService(),
         aiRepository: aiRepository,
       ),

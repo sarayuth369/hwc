@@ -29,4 +29,15 @@ class DailySummaryRepositoryImpl implements DailySummaryRepository {
     if (row == null) return null;
     return WellnessSummary.fromJson(row);
   }
+
+  @override
+  Future<List<WellnessSummary>> recentSummaries({int days = 7}) async {
+    final today = DateTime.now();
+    final results = <WellnessSummary>[];
+    for (var i = days - 1; i >= 0; i--) {
+      final summary = await summaryFor(today.subtract(Duration(days: i)));
+      if (summary != null) results.add(summary);
+    }
+    return results;
+  }
 }

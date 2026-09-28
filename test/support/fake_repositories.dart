@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:bkknex_health_app/data/local/chat_history_store.dart';
 import 'package:bkknex_health_app/domain/models/activity_record.dart';
 import 'package:bkknex_health_app/domain/models/ai_chat_failure.dart';
 import 'package:bkknex_health_app/domain/models/nutrition_record.dart';
@@ -49,6 +51,9 @@ class FakeAuthRepository implements AuthRepository {
 
   @override
   Future<void> sendPasswordResetEmail(String email) async {}
+
+  @override
+  Future<void> updatePassword(String newPassword) async {}
 
   @override
   Future<void> signOut() async {
@@ -113,9 +118,13 @@ class FakeProfileRepository implements ProfileRepository {
 
 class FakeDailySummaryRepository implements DailySummaryRepository {
   WellnessSummary? summary;
+  List<WellnessSummary> trend = [];
 
   @override
   Future<WellnessSummary?> summaryFor(DateTime date) async => summary;
+
+  @override
+  Future<List<WellnessSummary>> recentSummaries({int days = 7}) async => trend;
 }
 
 class FakeSleepRepository implements SleepRepository {
@@ -174,6 +183,7 @@ class FakeNutritionRepository implements NutritionRepository {
 /// all four tabs immediately) need this full set, not just the providers
 /// for the tab under test.
 List<SingleChildWidget> fullProviderSet({
+  required SharedPreferences prefs,
   FakeCurrentUserService? currentUserService,
   FakeAuthRepository? authRepository,
   FakeProfileRepository? profileRepository,
@@ -197,6 +207,9 @@ List<SingleChildWidget> fullProviderSet({
     ),
     Provider<AiRepository>.value(
       value: aiRepository ?? FakeAiRepository(),
+    ),
+    Provider<ChatHistoryStore>(
+      create: (_) => ChatHistoryStore(prefs),
     ),
     Provider<DailySummaryRepository>.value(
       value: dailySummaryRepository ?? FakeDailySummaryRepository(),

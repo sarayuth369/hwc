@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/ai/health_context.dart';
+import '../../../data/local/chat_history_store.dart';
 import '../../../domain/models/ai_chat_failure.dart';
+import '../../../domain/models/chat_message.dart';
 import '../../../domain/repositories/ai_repository.dart';
 import '../../../domain/repositories/current_user_service.dart';
 import '../../../domain/repositories/profile_repository.dart';
@@ -13,21 +16,11 @@ const _suggestedPrompts = [
   'Create a walking plan for me',
 ];
 
-class _ChatMessage {
-  const _ChatMessage({
-    required this.text,
-    required this.fromUser,
-    this.requiresProfessionalCare = false,
-  });
-
-  final String text;
-  final bool fromUser;
-  final bool requiresProfessionalCare;
-}
-
 /// A calm chat-bubble AI Talk screen (contract 1: the client only ever
 /// calls the Worker's documented `/api/ai/chat` route and relays what it
 /// returns — no safety logic, diagnosis, or prescribing happens here).
+/// History is persisted locally (`ChatHistoryStore`) so a conversation
+/// survives an app restart — there is no server-side conversation storage.
 class AiChatScreen extends StatefulWidget {
   const AiChatScreen({super.key});
 
@@ -38,11 +31,12 @@ class AiChatScreen extends StatefulWidget {
 class _AiChatScreenState extends State<AiChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
-  final _messages = <_ChatMessage>[];
+  final _messages = <ChatMessage>[];
   bool _isLoading = false;
   AiChatFailure? _failure;
   String? _lastMessage;
   String? _conversationId;
+  bool _historyLoaded = false;
 
   @override
   void dispose() {
@@ -51,18 +45,13 @@ class _AiChatScreenState extends State<AiChatScreen> {
     super.dispose();
   }
 
-  Future<Map<String, dynamic>> _buildHealthContext(
-    ProfileRepository profileRepository,
-  ) async {
-    final profile = await profileRepository.fetchProfile();
-    final dateOfBirth = profile?.dateOfBirth;
-    if (dateOfBirth == null) return {};
-    final now = DateTime.now();
-    var age = now.year - dateOfBirth.year;
-    final hasHadBirthdayThisYear = now.month > dateOfBirth.month ||
-        (now.month == dateOfBirth.month && now.day >= dateOfBirth.day);
-    if (!hasHadBirthdayThisYear) age -= 1;
-    return {'age': age};
+  void _loadHistoryOnce(ChatHistoryStore store) {
+    if (_historyLoaded) return;
+    _historyLoaded = true;
+    final saved = store.loadMessages();
+    if (saved.isEmpty) return;
+    _messages.addAll(saved);
+    _conversationId = store.loadConversationId();
   }
 
   void _scrollToEnd() {
@@ -76,24 +65,35 @@ class _AiChatScreenState extends State<AiChatScreen> {
     });
   }
 
+  Future<void> _newConversation(ChatHistoryStore store) async {
+    setState(() {
+      _messages.clear();
+      _conversationId = null;
+      _failure = null;
+      _lastMessage = null;
+    });
+    await store.clear();
+  }
+
   Future<void> _send([String? message]) async {
     final text = message ?? _controller.text.trim();
     if (text.isEmpty) return;
 
     final profileRepository = context.read<ProfileRepository>();
     final aiRepository = context.read<AiRepository>();
+    final historyStore = context.read<ChatHistoryStore>();
 
     setState(() {
       _isLoading = true;
       _failure = null;
       _lastMessage = text;
-      _messages.add(_ChatMessage(text: text, fromUser: true));
+      _messages.add(ChatMessage(text: text, fromUser: true));
       _controller.clear();
     });
     _scrollToEnd();
 
     try {
-      final healthContext = await _buildHealthContext(profileRepository);
+      final healthContext = await buildHealthContext(profileRepository);
       final response = await aiRepository.chat({
         if (_conversationId != null) 'conversationId': _conversationId,
         'message': text,
@@ -103,7 +103,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
       final safetyFlag = response['safetyFlag'] as Map<String, dynamic>?;
       setState(() {
         _conversationId = response['conversationId'] as String?;
-        _messages.add(_ChatMessage(
+        _messages.add(ChatMessage(
           text: response['reply'] as String? ?? '',
           fromUser: false,
           requiresProfessionalCare:
@@ -111,6 +111,8 @@ class _AiChatScreenState extends State<AiChatScreen> {
         ));
       });
       _scrollToEnd();
+      await historyStore.saveMessages(_messages);
+      await historyStore.saveConversationId(_conversationId);
     } on AiChatFailure catch (failure) {
       if (!mounted) return;
       setState(() => _failure = failure);
@@ -133,14 +135,26 @@ class _AiChatScreenState extends State<AiChatScreen> {
       );
     }
 
+    _loadHistoryOnce(context.read<ChatHistoryStore>());
+
     return Column(
       children: [
+        if (_messages.isNotEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              key: const Key('aiChatNewConversationButton'),
+              onPressed: () => _newConversation(context.read<ChatHistoryStore>()),
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('New conversation'),
+            ),
+          ),
         Expanded(
           child: _messages.isEmpty
               ? _EmptyState(onPromptTap: (prompt) => _send(prompt))
               : ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: _messages.length,
                   itemBuilder: (context, index) =>
                       _MessageBubble(message: _messages[index]),
@@ -246,7 +260,7 @@ class _EmptyState extends StatelessWidget {
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({required this.message});
 
-  final _ChatMessage message;
+  final ChatMessage message;
 
   @override
   Widget build(BuildContext context) {

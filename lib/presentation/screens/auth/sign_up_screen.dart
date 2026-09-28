@@ -15,9 +15,12 @@ class SignUpScreen extends StatefulWidget {
   State<SignUpScreen> createState() => _SignUpScreenState();
 }
 
+final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+
 class _SignUpScreenState extends State<SignUpScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
   String? _infoMessage;
@@ -26,15 +29,30 @@ class _SignUpScreenState extends State<SignUpScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
   Future<void> _signUp() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
-    if (email.isEmpty || password.length < 6) {
+    if (!_emailPattern.hasMatch(email)) {
       setState(() {
-        _errorMessage = 'Enter a valid email and a password of at least 6 characters.';
+        _errorMessage = 'Enter a valid email address.';
+        _infoMessage = null;
+      });
+      return;
+    }
+    if (password.length < 6) {
+      setState(() {
+        _errorMessage = 'Password must be at least 6 characters.';
+        _infoMessage = null;
+      });
+      return;
+    }
+    if (password != _confirmPasswordController.text) {
+      setState(() {
+        _errorMessage = 'Passwords do not match.';
         _infoMessage = null;
       });
       return;
@@ -98,6 +116,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   obscureText: true,
                   decoration: const InputDecoration(
                     labelText: 'Password (min 6 characters)',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  key: const Key('signUpConfirmPasswordField'),
+                  controller: _confirmPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirm password',
                     prefixIcon: Icon(Icons.lock_outline),
                   ),
                 ),

@@ -5,6 +5,7 @@ import '../../../domain/models/wellness_summary.dart';
 import '../../../domain/repositories/daily_summary_repository.dart';
 import '../../../domain/repositories/metric_repositories.dart';
 import '../../../domain/repositories/profile_repository.dart';
+import '../../widgets/ai_insight_card.dart';
 import '../../widgets/wellness_score_card.dart';
 import '../quick_actions/quick_add_sheet.dart';
 
@@ -102,6 +103,8 @@ class _HomeScreenState extends State<HomeScreen> {
               return WellnessScoreCard(summary: snapshot.data);
             },
           ),
+          const SizedBox(height: 16),
+          const AiInsightCard(),
           const SizedBox(height: 16),
           FutureBuilder<_TodayMetrics>(
             future: _metricsFuture,

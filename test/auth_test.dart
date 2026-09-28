@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bkknex_health_app/domain/repositories/auth_repository.dart';
 import 'package:bkknex_health_app/presentation/screens/auth/auth_gate.dart';
@@ -9,6 +10,10 @@ import 'package:bkknex_health_app/presentation/screens/auth/sign_in_screen.dart'
 import 'support/fake_repositories.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('SignInScreen requires both fields before calling the repository',
       (tester) async {
     final authRepo = FakeAuthRepository()..setSignedIn(false);
@@ -53,6 +58,7 @@ void main() {
 
   testWidgets('AuthGate shows SignInScreen when signed out, HomeShell when signed in',
       (tester) async {
+    final prefs = await SharedPreferences.getInstance();
     final authRepo = FakeAuthRepository();
     final profileRepo = FakeProfileRepository()..displayName = 'Alex';
     authRepo.setSignedIn(false);
@@ -60,6 +66,7 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: fullProviderSet(
+          prefs: prefs,
           authRepository: authRepo,
           profileRepository: profileRepo,
         ),
