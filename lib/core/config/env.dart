@@ -53,6 +53,21 @@ class Env {
   /// exactly the "confirmation email links to localhost" symptom this
   /// constant exists to fix. Hyphens are valid scheme characters, so this
   /// uses `bkknex-health-app` instead of `bkknex_health_app`.
+  ///
+  /// IMPORTANT — this string alone is not sufficient. Confirmed live
+  /// (2026-09-29, via Supabase's Admin API `generateLink`, which returns
+  /// the exact link a real confirmation email would contain): every
+  /// `redirect_to` GoTrue receives that isn't already in the Supabase
+  /// dashboard's Authentication → URL Configuration → Redirect URLs
+  /// allow-list is silently replaced with Site URL, no error surfaced
+  /// anywhere. Whenever this constant's value changes, the *exact* new
+  /// string must also be added to that allow-list — updating this file,
+  /// `scripts/patch_android_manifest.sh`, and the Android manifest is not
+  /// enough on its own. There is no way to verify the dashboard side from
+  /// this repo; re-run the `generateLink` check (see `HWC_REPORT.md`,
+  /// "Auth confirmation forensic #3") after any dashboard change to
+  /// confirm it actually took effect, rather than assuming a UI save
+  /// succeeded.
   static const String authRedirectUrl =
       'com.bkknex.bkknex-health-app://login-callback/';
 }
