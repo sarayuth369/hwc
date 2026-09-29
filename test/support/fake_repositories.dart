@@ -217,6 +217,11 @@ class FakeNutritionRepository implements NutritionRepository {
   Future<List<NutritionRecord>> recent({int days = 7}) async => logged;
 }
 
+class FakePremiumSubscriptionRepository implements SubscriptionRepository {
+  @override
+  Future<SubscriptionTier> currentTier() async => SubscriptionTier.premium;
+}
+
 /// Mirrors `PlayBillingService`'s honest current behavior (no products
 /// configured) by default, without touching any real platform channel.
 class FakeBillingService implements BillingService {
@@ -289,6 +294,7 @@ List<SingleChildWidget> fullProviderSet({
   FakeNutritionRepository? nutritionRepository,
   FakeNotificationRepository? notificationRepository,
   FakeBillingService? billingService,
+  SubscriptionRepository? subscriptionRepository,
 }) {
   return [
     Provider<CurrentUserService>.value(
@@ -309,8 +315,8 @@ List<SingleChildWidget> fullProviderSet({
     Provider<NotificationService>(
       create: (_) => NotificationService(prefs),
     ),
-    Provider<SubscriptionRepository>(
-      create: (_) => FreeTierSubscriptionRepository(),
+    Provider<SubscriptionRepository>.value(
+      value: subscriptionRepository ?? FreeTierSubscriptionRepository(),
     ),
     Provider<FamilyRepository>(
       create: (_) => NullFamilyRepository(),

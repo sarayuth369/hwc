@@ -76,8 +76,43 @@ void main() {
 
     await tester.tap(find.byKey(const Key('familyModeTile')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('familyModeEmptyState')), findsOneWidget);
+    // Family Mode is now gated behind Premium (wired to PremiumGate this
+    // pass); on the free tier (this test's default fake
+    // SubscriptionRepository), the locked upsell shows instead of the
+    // screen's own content.
+    expect(find.byKey(const Key('premiumGateMessage')), findsOneWidget);
+    expect(find.byKey(const Key('familyModeEmptyState')), findsNothing);
   });
+
+  testWidgets(
+    'a premium account sees the real Family Mode content, not the '
+    'locked upsell (regression guard: gating must not lock out an '
+    'actual entitled user)',
+    (tester) async {
+      final prefs = await SharedPreferences.getInstance();
+      await tester.binding.setSurfaceSize(const Size(390, 1600));
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AccessibilityModeController(prefs)),
+            ChangeNotifierProvider(create: (_) => AppThemeModeController(prefs)),
+            ...fullProviderSet(
+              prefs: prefs,
+              subscriptionRepository: FakePremiumSubscriptionRepository(),
+            ),
+          ],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('familyModeTile')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('familyModeEmptyState')), findsOneWidget);
+      expect(find.byKey(const Key('premiumGateMessage')), findsNothing);
+    },
+  );
 
   testWidgets('Subscription tile navigates to the honest not-configured screen',
       (tester) async {
