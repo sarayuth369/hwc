@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/config/legal_links.dart';
 import '../../../core/theme/app_theme_mode_controller.dart';
 import '../../../data/local/notification_service.dart';
 import '../../../domain/models/auth_failure.dart';
@@ -23,6 +25,11 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  Future<void> _openLink(String url) async {
+    final uri = Uri.parse(url);
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
   Future<void> _showChangePasswordDialog(BuildContext context) async {
     final controller = TextEditingController();
     final authRepository = context.read<AuthRepository>();
@@ -236,37 +243,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
           const _SectionLabel('About'),
-          const Card(
+          Card(
             child: Column(
               children: [
                 ListTile(
-                  leading: Icon(Icons.privacy_tip_outlined),
-                  title: Text('Privacy'),
-                  subtitle: Text(
+                  key: const Key('privacyTile'),
+                  leading: const Icon(Icons.privacy_tip_outlined),
+                  title: const Text('Privacy'),
+                  subtitle: const Text(
                     'Your health data is protected by row-level security — '
                     'only you can read or write your own records.',
                   ),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => _openLink(LegalLinks.privacy),
                 ),
-                Divider(height: 1),
+                const Divider(height: 1),
                 ListTile(
-                  leading: Icon(Icons.description_outlined),
-                  title: Text('Terms of Service'),
-                  subtitle: Text(
+                  key: const Key('termsTile'),
+                  leading: const Icon(Icons.description_outlined),
+                  title: const Text('Terms of Service'),
+                  subtitle: const Text(
                     'HWC is a wellness companion, not a medical device. It '
                     'does not diagnose, prescribe, or change medications.',
                   ),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => _openLink(LegalLinks.terms),
                 ),
-                Divider(height: 1),
+                const Divider(height: 1),
                 ListTile(
-                  leading: Icon(Icons.info_outline),
-                  title: Text('About HWC'),
-                  subtitle: Text(
+                  key: const Key('aboutTile'),
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text('About HWC'),
+                  subtitle: const Text(
                     'AI Health & Wellness Companion — not a substitute for '
                     'professional medical advice, diagnosis, or treatment.',
                   ),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => _openLink(LegalLinks.about),
                 ),
-                Divider(height: 1),
+                const Divider(height: 1),
                 ListTile(
+                  key: const Key('contactTile'),
+                  leading: const Icon(Icons.mail_outline),
+                  title: const Text('Contact'),
+                  subtitle: const Text(LegalLinks.contactEmail),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => _openLink(LegalLinks.contact),
+                ),
+                const Divider(height: 1),
+                const ListTile(
                   leading: Icon(Icons.numbers_outlined),
                   title: Text('App version'),
                   subtitle: Text(_appVersion),

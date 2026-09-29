@@ -39,4 +39,62 @@ void main() {
     expect(find.text('78'), findsOneWidget);
     expect(find.text('GOOD'), findsOneWidget);
   });
+
+  testWidgets(
+    'a real 0 score with an empty componentScores map shows the neutral '
+    '"build your baseline" state, never NEEDS CARE (regression: nothing '
+    'logged must not look like an alarming real bad day)',
+    (tester) async {
+      final prefs = await SharedPreferences.getInstance();
+      final summaryRepo = FakeDailySummaryRepository()
+        ..summary = WellnessSummary.fromJson({
+          'summary_date': '2026-09-26',
+          'wellness_score': 0,
+          'score_version': 1,
+          'component_scores': {},
+          'explanation': [],
+        });
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: fullProviderSet(prefs: prefs, dailySummaryRepository: summaryRepo),
+          child: const MaterialApp(home: Scaffold(body: HomeScreen())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('wellnessScoreNeutralState')), findsOneWidget);
+      expect(find.text('NEEDS CARE'), findsNothing);
+      expect(find.byKey(const Key('wellnessScoreValue')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a real low score backed by actual logged metrics still shows NEEDS '
+    'CARE (regression guard: the neutral-state fix must not hide a '
+    'genuinely bad real day)',
+    (tester) async {
+      final prefs = await SharedPreferences.getInstance();
+      final summaryRepo = FakeDailySummaryRepository()
+        ..summary = WellnessSummary.fromJson({
+          'summary_date': '2026-09-26',
+          'wellness_score': 20,
+          'score_version': 1,
+          'component_scores': {'activity': 0, 'water': 0},
+          'explanation': [],
+        });
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: fullProviderSet(prefs: prefs, dailySummaryRepository: summaryRepo),
+          child: const MaterialApp(home: Scaffold(body: HomeScreen())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('NEEDS CARE'), findsOneWidget);
+      expect(find.text('20'), findsOneWidget);
+      expect(find.byKey(const Key('wellnessScoreNeutralState')), findsNothing);
+    },
+  );
 }

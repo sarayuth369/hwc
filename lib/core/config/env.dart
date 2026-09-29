@@ -70,4 +70,32 @@ class Env {
   /// succeeded.
   static const String authRedirectUrl =
       'com.bkknex.bkknex-health-app://login-callback/';
+
+  /// Google's own published test ad unit IDs (safe to embed — Google
+  /// documents these publicly for exactly this purpose: real ad requests
+  /// that always serve a clearly-labeled test creative, never real inventory
+  /// or real spend). Used whenever no production ad unit ID is supplied via
+  /// `--dart-define`, so a build with no AdMob account configured still
+  /// shows real (test) ads during development rather than nothing — and a
+  /// build that's missing production IDs by mistake never silently serves
+  /// real ads under a test app either.
+  static const String _testBannerAdUnitId = 'ca-app-pub-3940256099942544/6300978111';
+  static const String _testAppOpenAdUnitId = 'ca-app-pub-3940256099942544/9257395921';
+
+  static const String bannerAdUnitId = String.fromEnvironment(
+    'ADMOB_BANNER_AD_UNIT_ID',
+    defaultValue: _testBannerAdUnitId,
+  );
+
+  static const String appOpenAdUnitId = String.fromEnvironment(
+    'ADMOB_APP_OPEN_AD_UNIT_ID',
+    defaultValue: _testAppOpenAdUnitId,
+  );
+
+  /// True only when a *real* production ad unit ID was supplied via
+  /// `--dart-define` — never true for Google's own test IDs above, so a
+  /// debug build never claims "ads are live" when it's actually serving
+  /// Google's test creative.
+  static bool get hasProductionAdConfig =>
+      bannerAdUnitId != _testBannerAdUnitId || appOpenAdUnitId != _testAppOpenAdUnitId;
 }

@@ -7,7 +7,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:bkknex_health_app/data/local/chat_history_store.dart';
 import 'package:bkknex_health_app/data/local/free_tier_subscription_repository.dart';
 import 'package:bkknex_health_app/data/local/notification_service.dart';
+import 'package:bkknex_health_app/data/local/null_ad_service.dart';
 import 'package:bkknex_health_app/data/local/null_family_repository.dart';
+import 'package:bkknex_health_app/domain/ads/ad_service.dart';
+import 'package:bkknex_health_app/domain/billing/billing_product.dart';
+import 'package:bkknex_health_app/domain/billing/billing_service.dart';
 import 'package:bkknex_health_app/domain/models/activity_record.dart';
 import 'package:bkknex_health_app/domain/models/ai_chat_failure.dart';
 import 'package:bkknex_health_app/domain/models/nutrition_record.dart';
@@ -22,7 +26,9 @@ import 'package:bkknex_health_app/domain/repositories/auth_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/current_user_service.dart';
 import 'package:bkknex_health_app/domain/repositories/daily_summary_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/family_repository.dart';
+import 'package:bkknex_health_app/domain/models/notification_item.dart';
 import 'package:bkknex_health_app/domain/repositories/metric_repositories.dart';
+import 'package:bkknex_health_app/domain/repositories/notification_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/profile_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/subscription_repository.dart';
 
@@ -211,6 +217,60 @@ class FakeNutritionRepository implements NutritionRepository {
   Future<List<NutritionRecord>> recent({int days = 7}) async => logged;
 }
 
+/// Mirrors `PlayBillingService`'s honest current behavior (no products
+/// configured) by default, without touching any real platform channel.
+class FakeBillingService implements BillingService {
+  List<BillingProduct> products = [];
+  PurchaseOutcome purchaseResult = PurchaseOutcome.notConfigured;
+  bool restoreCalled = false;
+
+  @override
+  Future<bool> isAvailable() async => true;
+
+  @override
+  Future<List<BillingProduct>> queryProducts() async => products;
+
+  @override
+  Future<PurchaseOutcome> purchase(BillingProduct product) async => purchaseResult;
+
+  @override
+  Future<void> restorePurchases() async => restoreCalled = true;
+}
+
+class FakeNotificationRepository implements NotificationRepository {
+  final List<NotificationItem> items = [];
+
+  @override
+  Future<List<NotificationItem>> list({int limit = 50}) async =>
+      items.take(limit).toList();
+
+  @override
+  Future<int> unreadCount() async => items.where((i) => i.isUnread).length;
+
+  @override
+  Future<void> markAsRead(String id) async {
+    final index = items.indexWhere((i) => i.id == id);
+    if (index == -1) return;
+    final old = items[index];
+    items[index] = NotificationItem(
+      id: old.id,
+      category: old.category,
+      title: old.title,
+      body: old.body,
+      createdAt: old.createdAt,
+      deepLink: old.deepLink,
+      readAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<void> markAllAsRead() async {
+    for (var i = 0; i < items.length; i++) {
+      await markAsRead(items[i].id);
+    }
+  }
+}
+
 /// Every provider `HomeShell`/`AuthGate` need, wired to fresh fakes. Widget
 /// tests that pump the real navigation shell (whose `IndexedStack` builds
 /// all four tabs immediately) need this full set, not just the providers
@@ -227,6 +287,8 @@ List<SingleChildWidget> fullProviderSet({
   FakeWaterRepository? waterRepository,
   FakeWeightRepository? weightRepository,
   FakeNutritionRepository? nutritionRepository,
+  FakeNotificationRepository? notificationRepository,
+  FakeBillingService? billingService,
 }) {
   return [
     Provider<CurrentUserService>.value(
@@ -270,6 +332,15 @@ List<SingleChildWidget> fullProviderSet({
     ),
     Provider<NutritionRepository>.value(
       value: nutritionRepository ?? FakeNutritionRepository(),
+    ),
+    Provider<NotificationRepository>.value(
+      value: notificationRepository ?? FakeNotificationRepository(),
+    ),
+    Provider<BillingService>.value(
+      value: billingService ?? FakeBillingService(),
+    ),
+    Provider<AdService>.value(
+      value: NullAdService(),
     ),
   ];
 }

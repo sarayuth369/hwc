@@ -45,6 +45,24 @@ if ! grep -q "android:label=\"$APP_LABEL\"" "$MANIFEST"; then
   changed=1
 fi
 
+if ! grep -q 'com.google.android.gms.ads.APPLICATION_ID' "$MANIFEST"; then
+  # google_mobile_ads crashes at MobileAds.instance.initialize() without
+  # this meta-data present -- it is not optional, unlike most of this
+  # script's other patches. Google's own published test App ID (safe to
+  # commit -- it's meant to be public, always serves a labeled test ad,
+  # never real inventory). Swap to a real AdMob App ID via this same
+  # script once M creates one, never by hand-editing the gitignored
+  # generated manifest.
+  ADMOB_APP_ID="ca-app-pub-3940256099942544~3347511713"
+  # Inserted after the line that closes the multi-line <application ...>
+  # opening tag (android:icon=...">), not after the bare "<application"
+  # substring -- that would land the meta-data inside the tag's own
+  # attribute list, which is invalid XML.
+  sed -i "/android:icon=\"@mipmap\/ic_launcher\">/a\\
+        <meta-data android:name=\"com.google.android.gms.ads.APPLICATION_ID\" android:value=\"$ADMOB_APP_ID\"/>" "$MANIFEST"
+  changed=1
+fi
+
 # Must stay byte-identical to Env.authRedirectUrl's scheme/host (see
 # lib/core/config/env.dart). Deliberately NOT the app's applicationId
 # (com.bkknex.bkknex_health_app) -- that string's underscores are illegal

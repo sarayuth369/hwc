@@ -6,6 +6,8 @@ import '../core/accessibility/accessibility_mode_controller.dart';
 import '../core/config/env.dart';
 import '../core/theme/app_theme_mode_controller.dart';
 import '../data/ai/http_ai_repository.dart';
+import '../data/ads/admob_ad_service.dart';
+import '../data/billing/play_billing_service.dart';
 import '../data/local/chat_history_store.dart';
 import '../data/local/free_tier_subscription_repository.dart';
 import '../data/local/metric_write_queue.dart';
@@ -17,8 +19,11 @@ import '../data/supabase/current_user_service_impl.dart';
 import '../data/supabase/daily_summary_repository_impl.dart';
 import '../data/supabase/health_goals_repository_impl.dart';
 import '../data/supabase/metric_repositories_impl.dart';
+import '../data/supabase/notification_repository_impl.dart';
 import '../data/supabase/profile_repository_impl.dart';
 import '../data/supabase/supabase_client_provider.dart';
+import '../domain/ads/ad_service.dart';
+import '../domain/billing/billing_service.dart';
 import '../domain/repositories/ai_repository.dart';
 import '../domain/repositories/auth_repository.dart';
 import '../domain/repositories/current_user_service.dart';
@@ -26,6 +31,7 @@ import '../domain/repositories/daily_summary_repository.dart';
 import '../domain/repositories/family_repository.dart';
 import '../domain/repositories/health_goals_repository.dart';
 import '../domain/repositories/metric_repositories.dart';
+import '../domain/repositories/notification_repository.dart';
 import '../domain/repositories/profile_repository.dart';
 import '../domain/repositories/subscription_repository.dart';
 
@@ -106,6 +112,16 @@ class AppProviders extends StatelessWidget {
         ),
         Provider<ProfileRepository>(
           create: (_) => ProfileRepositoryImpl(client),
+        ),
+        Provider<NotificationRepository>(
+          create: (_) => NotificationRepositoryImpl(client),
+        ),
+        Provider<BillingService>(
+          create: (_) => PlayBillingService(),
+        ),
+        Provider<AdService>(
+          create: (_) => AdMobAdService()..initialize(),
+          dispose: (_, __) {},
         ),
       ],
       child: child,

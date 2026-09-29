@@ -14,16 +14,30 @@ class WellnessScoreCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final summary = this.summary;
-    if (summary == null || summary.wellnessScore == null) {
+    // `componentScores` is sparse -- the RPC only includes a key for a
+    // metric it actually had real data for (confirmed against its own test
+    // fixtures: {'sleep': 80} for a day with only sleep logged, never a
+    // full zeroed-out map). An empty map means the score came from nothing
+    // logged at all, not a real low score -- must not render the same as
+    // an actual bad day (e.g. real 0 activity + real 0 water, both
+    // genuinely logged). Distinguishing "no data" from "poor wellness" per
+    // the product requirement has to use this, since `wellnessScore` alone
+    // (an int, 0 either way) can't tell the two cases apart.
+    final hasAnyRealData =
+        summary != null && summary.componentScores.isNotEmpty;
+    if (summary == null || summary.wellnessScore == null || !hasAnyRealData) {
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Row(
             children: [
-              Icon(Icons.favorite_border, color: theme.colorScheme.primary),
+              Icon(Icons.spa_outlined, color: theme.colorScheme.primary),
               const SizedBox(width: 12),
               const Expanded(
-                child: Text('Log a few metrics today to see your Wellness Score.'),
+                child: Text(
+                  "Let's build your baseline — log a metric to see your Wellness Score.",
+                  key: Key('wellnessScoreNeutralState'),
+                ),
               ),
             ],
           ),

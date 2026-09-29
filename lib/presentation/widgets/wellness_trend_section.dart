@@ -48,31 +48,57 @@ class _WellnessTrendSectionState extends State<WellnessTrendSection> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       for (final summary in trend)
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '${summary.wellnessScore ?? '-'}',
-                                  style: theme.textTheme.bodyMedium,
+                        Builder(
+                          builder: (context) {
+                            // Same "sparse componentScores" signal as
+                            // WellnessScoreCard: a day with nothing logged
+                            // still gets a real row back from the RPC
+                            // (wellnessScore 0, componentScores {}), which
+                            // must render as "no entry" (a dash, no bar),
+                            // not as a real 0 day among six real ones --
+                            // otherwise a mostly-empty week always draws as
+                            // seven flat zero bars, indistinguishable from
+                            // seven genuinely bad days.
+                            final hasData = summary.componentScores.isNotEmpty;
+                            return Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      hasData
+                                          ? '${summary.wellnessScore}'
+                                          : '—',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                        color: hasData
+                                            ? null
+                                            : theme.colorScheme.outline,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      height: hasData
+                                          ? ((summary.wellnessScore ?? 0)
+                                                  .clamp(0, 100) /
+                                              100 *
+                                              60)
+                                          : 4,
+                                      decoration: BoxDecoration(
+                                        color: hasData
+                                            ? theme.colorScheme.primary
+                                                .withValues(alpha: 0.6)
+                                            : theme.colorScheme.outlineVariant,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 4),
-                                Container(
-                                  height: ((summary.wellnessScore ?? 0)
-                                          .clamp(0, 100) /
-                                      100 *
-                                      60),
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.primary
-                                        .withValues(alpha: 0.6),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         ),
                     ],
                   ),
