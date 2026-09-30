@@ -122,7 +122,10 @@ void main() {
   });
 
   testWidgets(
-      'tapping the mic button hits the real voice endpoint and shows its honest message',
+      'tapping the mic button attempts real on-device speech recognition '
+      'and degrades honestly when no platform implementation is present '
+      '(the same class of platform-plugin limitation documented for '
+      'camera/notifications — flutter_test has no real Android runtime)',
       (tester) async {
     await tester.pumpWidget(
       await _wrap(
@@ -132,9 +135,32 @@ void main() {
     );
 
     await tester.tap(find.byKey(const Key('aiChatVoiceButton')));
-    await tester.pump();
+    // `speech_to_text`'s initialize() only ever completes via a native
+    // status callback that never arrives here (no real platform channel
+    // registered in a widget test) -- the screen's own 5s timeout is what
+    // actually resolves it, not settling/frame-scheduling, so this has to
+    // pump real time forward rather than use pumpAndSettle.
+    await tester.pump(const Duration(seconds: 6));
 
-    expect(find.byKey(const Key('aiChatVoiceSnackBar')), findsOneWidget);
-    expect(find.text('This isn\'t available yet.'), findsOneWidget);
+    expect(find.byKey(const Key('aiChatVoiceErrorMessage')), findsOneWidget);
+  });
+
+  testWidgets('an AI reply shows a "read aloud" button, a user message does not',
+      (tester) async {
+    final aiRepository = FakeAiRepository()
+      ..chatResponse = {'reply': 'Drink more water.', 'conversationId': 'c1'};
+
+    await tester.pumpWidget(
+      await _wrap(
+        userService: FakeCurrentUserService(),
+        aiRepository: aiRepository,
+      ),
+    );
+
+    await tester.enterText(find.byKey(const Key('aiChatInput')), 'Hi');
+    await tester.tap(find.byKey(const Key('aiChatSendButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('aiChatSpeakButton')), findsOneWidget);
   });
 }

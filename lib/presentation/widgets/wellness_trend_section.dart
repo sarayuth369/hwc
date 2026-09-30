@@ -50,16 +50,15 @@ class _WellnessTrendSectionState extends State<WellnessTrendSection> {
                       for (final summary in trend)
                         Builder(
                           builder: (context) {
-                            // Same "sparse componentScores" signal as
-                            // WellnessScoreCard: a day with nothing logged
-                            // still gets a real row back from the RPC
-                            // (wellnessScore 0, componentScores {}), which
-                            // must render as "no entry" (a dash, no bar),
-                            // not as a real 0 day among six real ones --
-                            // otherwise a mostly-empty week always draws as
-                            // seven flat zero bars, indistinguishable from
-                            // seven genuinely bad days.
-                            final hasData = summary.componentScores.isNotEmpty;
+                            // Same fix as WellnessScoreCard (real-device
+                            // evidence showed this arriving as an all-zero
+                            // componentScores map, not an empty one, for a
+                            // no-data day) -- a zero score with no non-zero
+                            // component reads as "no entry" (a dash, no
+                            // bar), not as a real 0 day among six real ones.
+                            final hasData = summary.wellnessScore != null &&
+                                summary.wellnessScore != 0 &&
+                                summary.componentScores.isNotEmpty;
                             return Expanded(
                               child: Padding(
                                 padding:

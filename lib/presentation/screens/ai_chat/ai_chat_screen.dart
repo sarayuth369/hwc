@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../../core/ai/health_context.dart';
 import '../../../data/local/chat_history_store.dart';
@@ -32,16 +37,23 @@ class _AiChatScreenState extends State<AiChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _messages = <ChatMessage>[];
+  final _speech = stt.SpeechToText();
+  final _tts = FlutterTts();
   bool _isLoading = false;
   AiChatFailure? _failure;
   String? _lastMessage;
   String? _conversationId;
   bool _historyLoaded = false;
+  bool _speechInitialized = false;
+  bool _isListening = false;
+  String? _voiceError;
 
   @override
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
+    unawaited(_speech.stop());
+    unawaited(_tts.stop());
     super.dispose();
   }
 
@@ -75,26 +87,81 @@ class _AiChatScreenState extends State<AiChatScreen> {
     await store.clear();
   }
 
-  /// Voice input has no real audio-capture UI yet (that's a separate,
-  /// larger feature: a recording dependency + microphone permission), but
-  /// the mic button is wired to a real server call rather than left dead —
-  /// this genuinely hits `/api/ai/voice/transcribe` and shows whatever the
-  /// server actually says (a real 501 today, since `NullVoiceProvider` has
-  /// no backend behind it yet).
-  Future<void> _attemptVoice() async {
-    final aiRepository = context.read<AiRepository>();
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    try {
-      await aiRepository.transcribeVoice(const {});
-    } on AiChatFailure catch (failure) {
-      if (!mounted) return;
-      messenger?.showSnackBar(
-        SnackBar(
-          key: const Key('aiChatVoiceSnackBar'),
-          content: Text(failure.message),
-        ),
-      );
+  /// Real on-device speech-to-text (Android's built-in speech recognizer
+  /// via the `speech_to_text` plugin) — no backend/account/secret needed,
+  /// unlike the Worker's still-unimplemented `/api/ai/voice/*` routes. Tap
+  /// to start listening, tap again (or wait for a pause) to stop; the
+  /// recognized text is sent through the same real `/api/ai/chat` flow as
+  /// typed messages.
+  Future<void> _toggleListening() async {
+    if (_isListening) {
+      await _speech.stop();
+      if (mounted) setState(() => _isListening = false);
+      return;
     }
+
+    if (!_speechInitialized) {
+      // `initialize()` only ever completes via a native->Dart status
+      // callback -- if the OS speech service is unavailable/misbehaving
+      // (or, in `flutter test`, simply absent) it never fires and the
+      // Future hangs forever with no error. A bounded timeout turns that
+      // into a real, recoverable "voice isn't available" state instead of
+      // leaving the mic button stuck indefinitely.
+      try {
+        _speechInitialized = await _speech
+            .initialize(
+              onError: (error) {
+                if (!mounted) return;
+                setState(() {
+                  _isListening = false;
+                  _voiceError = 'Voice error: ${error.errorMsg}';
+                });
+              },
+              onStatus: (status) {
+                if (!mounted) return;
+                if (status == 'notListening' || status == 'done') {
+                  setState(() => _isListening = false);
+                }
+              },
+            )
+            .timeout(const Duration(seconds: 5), onTimeout: () => false);
+      } catch (_) {
+        _speechInitialized = false;
+      }
+    }
+
+    if (!_speechInitialized) {
+      if (!mounted) return;
+      setState(() {
+        _voiceError = "Voice isn't available — check the microphone "
+            'permission for this app in system settings.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isListening = true;
+      _voiceError = null;
+    });
+    await _speech.listen(
+      onResult: (SpeechRecognitionResult result) {
+        if (!mounted) return;
+        _controller.text = result.recognizedWords;
+        _controller.selection = TextSelection.collapsed(
+          offset: _controller.text.length,
+        );
+        if (result.finalResult) {
+          setState(() => _isListening = false);
+          final heard = result.recognizedWords.trim();
+          if (heard.isNotEmpty) _send(heard);
+        }
+      },
+    );
+  }
+
+  Future<void> _speak(String text) async {
+    await _tts.stop();
+    await _tts.speak(text);
   }
 
   Future<void> _send([String? message]) async {
@@ -178,10 +245,26 @@ class _AiChatScreenState extends State<AiChatScreen> {
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: _messages.length,
-                  itemBuilder: (context, index) =>
-                      _MessageBubble(message: _messages[index]),
+                  itemBuilder: (context, index) {
+                    final message = _messages[index];
+                    return _MessageBubble(
+                      message: message,
+                      onSpeak: message.fromUser
+                          ? null
+                          : () => _speak(message.text),
+                    );
+                  },
                 ),
         ),
+        if (_voiceError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              _voiceError!,
+              key: const Key('aiChatVoiceErrorMessage'),
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+          ),
         if (_failure != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -210,16 +293,21 @@ class _AiChatScreenState extends State<AiChatScreen> {
               children: [
                 IconButton(
                   key: const Key('aiChatVoiceButton'),
-                  onPressed: _attemptVoice,
-                  tooltip: 'Voice',
-                  icon: const Icon(Icons.mic_none),
+                  onPressed: _isLoading ? null : _toggleListening,
+                  tooltip: _isListening ? 'Stop listening' : 'Voice',
+                  icon: Icon(
+                    _isListening ? Icons.mic : Icons.mic_none,
+                    color: _isListening ? theme.colorScheme.error : null,
+                  ),
                 ),
                 Expanded(
                   child: TextField(
                     key: const Key('aiChatInput'),
                     controller: _controller,
                     enabled: !_isLoading,
-                    decoration: const InputDecoration(hintText: 'Ask a question'),
+                    decoration: InputDecoration(
+                      hintText: _isListening ? 'Listening...' : 'Ask a question',
+                    ),
                     onSubmitted: (_) => _send(),
                   ),
                 ),
@@ -280,9 +368,13 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
+  const _MessageBubble({required this.message, this.onSpeak});
 
   final ChatMessage message;
+
+  /// Reads this message aloud via on-device text-to-speech — only ever
+  /// passed for an AI reply (never a user's own message).
+  final VoidCallback? onSpeak;
 
   @override
   Widget build(BuildContext context) {
@@ -304,12 +396,33 @@ class _MessageBubble extends StatelessWidget {
                 : theme.colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(16),
           ),
-          child: Text(
-            message.text,
-            key: isUser ? null : const Key('aiChatReply'),
-            style: TextStyle(
-              color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                message.text,
+                key: isUser ? null : const Key('aiChatReply'),
+                style: TextStyle(
+                  color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+                ),
+              ),
+              if (onSpeak != null)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    key: const Key('aiChatSpeakButton'),
+                    onPressed: onSpeak,
+                    tooltip: 'Read aloud',
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(
+                      Icons.volume_up_outlined,
+                      size: 18,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
         if (message.requiresProfessionalCare)

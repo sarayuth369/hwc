@@ -13,7 +13,9 @@ import '../../../domain/models/nutrition_record.dart';
 import '../../../domain/repositories/ai_repository.dart';
 import '../../../domain/repositories/current_user_service.dart';
 import '../../../domain/repositories/metric_repositories.dart';
+import '../../../data/local/sync_service.dart';
 import '../../../domain/repositories/profile_repository.dart';
+import '../../widgets/confirmation_dialog.dart';
 
 /// Food Scanner: real photo capture/pick, then **real** AI vision analysis
 /// (the Worker's `/api/ai/image/analyze` route, backed by Cloudflare
@@ -128,6 +130,21 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
       return;
     }
     final description = _descriptionController.text.trim();
+    // The vision model's identification is a guess, not a verified fact
+    // (see the on-device evidence in HWC_DECISIONS.md: a photographed guava
+    // was misread as a kiwi/citrus fruit) -- require an explicit confirm of
+    // exactly what will be logged, rather than saving whatever is still in
+    // the editable field the moment the button is tapped.
+    final confirmed = await showConfirmationDialog(
+      context,
+      title: 'Add this to today?',
+      message: description.isEmpty
+          ? 'No description entered — this will be logged as "Scanned meal" with no nutrition estimate tied to it.'
+          : 'Logging: "$description"'
+              '${_estimate != null ? '\n\n$_estimate' : ''}'
+              '\n\nDouble-check the food name above is correct before adding — the AI\'s guess isn\'t always right.',
+    );
+    if (!confirmed || !mounted) return;
     setState(() => _isSaving = true);
     await context.read<NutritionRepository>().logNutrition(
           NutritionRecord(
@@ -137,6 +154,11 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
             description: description.isEmpty ? 'Scanned meal' : description,
           ),
         );
+    if (!mounted) return;
+    // Push the offline-first queue now rather than waiting for the next
+    // up-to-30s sync tick, so Home/Health's "recent()" reads (straight
+    // from Supabase) actually see it once this screen is popped.
+    await context.read<MetricSyncTrigger>().syncPending();
     if (!mounted) return;
     setState(() {
       _isSaving = false;
@@ -226,15 +248,17 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
               key: const Key('foodScannerDescriptionField'),
               controller: _descriptionController,
               decoration: const InputDecoration(
-                labelText: 'What is this?',
+                labelText: "AI's guess — edit if it's wrong",
                 hintText: 'e.g. Grilled chicken bowl',
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              'AI reads your photo to suggest a description, then gives a '
-              'rough nutrition estimate from it — always check it looks '
-              'right before adding.',
+              'AI reads your photo to guess what the food is — it can get '
+              'this wrong, especially for less common fruits and '
+              'vegetables. Correct the text above before estimating if it '
+              "doesn't look right; the nutrition estimate is only as good "
+              'as the food name.',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 12),

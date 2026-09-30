@@ -14,9 +14,31 @@ import '../quick_actions/quick_add_sheet.dart';
 /// a greeting, the hero Wellness Score card, a metric summary grid, and a
 /// prominent "Talk to AI" call to action.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.onTalkToAi});
+  const HomeScreen({
+    super.key,
+    this.onTalkToAi,
+    this.onDataChanged,
+    this.now = DateTime.now,
+  });
 
   final VoidCallback? onTalkToAi;
+
+  /// Called after Quick Add closes, so a sibling screen (Health, kept alive
+  /// in `HomeShell`'s `IndexedStack`) can refresh too — Quick Add can change
+  /// data this screen doesn't itself display.
+  final VoidCallback? onDataChanged;
+
+  /// Overridable clock for [_greeting] (real callers never pass this —
+  /// it defaults to the real time). Without this seam, the golden
+  /// screenshot test for this screen silently broke depending on the real
+  /// wall-clock hour at test-run time: "Good Afternoon" (14 chars) wraps
+  /// to a second line at this screen's test width where "Good Morning"/
+  /// "Good Evening" (12 chars each) don't, so regenerating the golden at
+  /// one hour and re-running the suite at a different hour produced a
+  /// real, reproducible pixel diff that had nothing to do with any code
+  /// change — confirmed by testing in isolation and tracing to
+  /// `DateTime.now().hour` before adding this fix.
+  final DateTime Function() now;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -66,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
 
   String _greeting() {
-    final hour = DateTime.now().hour;
+    final hour = widget.now().hour;
     if (hour < 12) return 'Good Morning';
     if (hour < 17) return 'Good Afternoon';
     return 'Good Evening';
@@ -173,7 +195,13 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 12),
           OutlinedButton.icon(
             key: const Key('homeQuickAddButton'),
-            onPressed: () => showQuickAddSheet(context),
+            onPressed: () => showQuickAddSheet(
+              context,
+              onChanged: () {
+                _refresh();
+                widget.onDataChanged?.call();
+              },
+            ),
             icon: const Icon(Icons.add),
             label: const Text('Quick Add'),
           ),

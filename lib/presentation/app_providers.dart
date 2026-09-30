@@ -80,6 +80,7 @@ class AppProviders extends StatelessWidget {
           create: (_) => NullFamilyRepository(),
         ),
         Provider<SyncService>.value(value: syncService),
+        Provider<MetricSyncTrigger>.value(value: syncService),
         Provider<CurrentUserService>.value(value: currentUserService),
         Provider<AuthRepository>(
           create: (_) => AuthRepositoryImpl(client),

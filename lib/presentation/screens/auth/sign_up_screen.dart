@@ -67,12 +67,19 @@ class _SignUpScreenState extends State<SignUpScreen> {
     try {
       await authRepository.signUp(email: email, password: password);
       if (!mounted) return;
-      if (!authRepository.isSignedIn) {
-        // Email confirmation required before a session exists.
-        setState(() {
-          _infoMessage = 'Check your email to confirm your account, then sign in.';
-        });
+      if (authRepository.isSignedIn) {
+        // A session already exists (no email confirmation required by this
+        // Supabase project's settings) -- `AuthGate` has already rebuilt
+        // itself into the name-capture/Home flow underneath this pushed
+        // route, but that rebuild is invisible until this route is popped.
+        // Without this pop the user appeared stuck back on Create Account.
+        Navigator.of(context).pop();
+        return;
       }
+      // Email confirmation required before a session exists.
+      setState(() {
+        _infoMessage = 'Check your email to confirm your account, then sign in.';
+      });
     } on AuthFailure catch (failure) {
       if (!mounted) return;
       setState(() => _errorMessage = failure.message);
@@ -143,19 +150,26 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     _infoMessage!,
                     key: const Key('signUpInfoMessage'),
                   ),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    key: const Key('signUpBackToSignInButton'),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Back to sign in'),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    key: const Key('signUpButton'),
+                    onPressed: _isLoading ? null : _signUp,
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Create account'),
+                  ),
                 ],
-                const SizedBox(height: 16),
-                FilledButton(
-                  key: const Key('signUpButton'),
-                  onPressed: _isLoading ? null : _signUp,
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Create account'),
-                ),
               ],
             ),
           ),

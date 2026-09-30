@@ -14,17 +14,23 @@ class WellnessScoreCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final summary = this.summary;
-    // `componentScores` is sparse -- the RPC only includes a key for a
-    // metric it actually had real data for (confirmed against its own test
-    // fixtures: {'sleep': 80} for a day with only sleep logged, never a
-    // full zeroed-out map). An empty map means the score came from nothing
-    // logged at all, not a real low score -- must not render the same as
-    // an actual bad day (e.g. real 0 activity + real 0 water, both
-    // genuinely logged). Distinguishing "no data" from "poor wellness" per
-    // the product requirement has to use this, since `wellnessScore` alone
-    // (an int, 0 either way) can't tell the two cases apart.
-    final hasAnyRealData =
-        summary != null && summary.componentScores.isNotEmpty;
+    // Real-device evidence (2026-09-30 polish pass) showed a brand-new,
+    // never-logged-anything account still rendering "0 / NEEDS CARE" —
+    // disproving the earlier assumption (based only on the RPC's own SQL
+    // test fixtures, never verified against live production output) that
+    // `component_scores` is reliably sparse/empty for a no-data day. In
+    // production it can arrive as an all-zero map rather than an omitted
+    // one. Treating a zero score with no non-zero component as "no data"
+    // is deliberately the more inclusive (and safer) reading: a genuinely
+    // bad real day would need every single tracked metric (sleep, activity,
+    // water, nutrition) to have been actually logged as a real zero on the
+    // same day, which is implausible next to "the RPC's default/no-data
+    // case is zero" — and mislabeling a brand-new user as "NEEDS CARE" is
+    // the worse failure mode the product explicitly wants to avoid.
+    final hasAnyRealData = summary != null &&
+        summary.wellnessScore != null &&
+        summary.wellnessScore != 0 &&
+        summary.componentScores.isNotEmpty;
     if (summary == null || summary.wellnessScore == null || !hasAnyRealData) {
       return Card(
         child: Padding(

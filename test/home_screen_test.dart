@@ -70,6 +70,36 @@ void main() {
   );
 
   testWidgets(
+    'a 0 score with an all-zero (not empty) componentScores map still shows '
+    'the neutral state (regression: real-device evidence showed the RPC '
+    'returning zeroed-out keys rather than an omitted map for a brand-new '
+    'account, which the earlier empty-map-only check missed)',
+    (tester) async {
+      final prefs = await SharedPreferences.getInstance();
+      final summaryRepo = FakeDailySummaryRepository()
+        ..summary = WellnessSummary.fromJson({
+          'summary_date': '2026-09-26',
+          'wellness_score': 0,
+          'score_version': 1,
+          'component_scores': {'sleep': 0, 'activity': 0, 'water': 0, 'nutrition': 0},
+          'explanation': [],
+        });
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: fullProviderSet(prefs: prefs, dailySummaryRepository: summaryRepo),
+          child: const MaterialApp(home: Scaffold(body: HomeScreen())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('wellnessScoreNeutralState')), findsOneWidget);
+      expect(find.text('NEEDS CARE'), findsNothing);
+      expect(find.byKey(const Key('wellnessScoreValue')), findsNothing);
+    },
+  );
+
+  testWidgets(
     'a real low score backed by actual logged metrics still shows NEEDS '
     'CARE (regression guard: the neutral-state fix must not hide a '
     'genuinely bad real day)',

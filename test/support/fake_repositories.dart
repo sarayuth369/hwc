@@ -9,6 +9,7 @@ import 'package:bkknex_health_app/data/local/free_tier_subscription_repository.d
 import 'package:bkknex_health_app/data/local/notification_service.dart';
 import 'package:bkknex_health_app/data/local/null_ad_service.dart';
 import 'package:bkknex_health_app/data/local/null_family_repository.dart';
+import 'package:bkknex_health_app/data/local/sync_service.dart';
 import 'package:bkknex_health_app/domain/ads/ad_service.dart';
 import 'package:bkknex_health_app/domain/billing/billing_product.dart';
 import 'package:bkknex_health_app/domain/billing/billing_service.dart';
@@ -222,6 +223,19 @@ class FakePremiumSubscriptionRepository implements SubscriptionRepository {
   Future<SubscriptionTier> currentTier() async => SubscriptionTier.premium;
 }
 
+/// A no-op `MetricSyncTrigger` -- the Fake* metric repositories don't write
+/// through the real offline-first queue at all, so there's never anything
+/// for a real sync to do in a test; this just records how many times it
+/// was asked to try.
+class FakeSyncTrigger implements MetricSyncTrigger {
+  int callCount = 0;
+
+  @override
+  Future<void> syncPending() async {
+    callCount++;
+  }
+}
+
 /// Mirrors `PlayBillingService`'s honest current behavior (no products
 /// configured) by default, without touching any real platform channel.
 class FakeBillingService implements BillingService {
@@ -347,6 +361,9 @@ List<SingleChildWidget> fullProviderSet({
     ),
     Provider<AdService>.value(
       value: NullAdService(),
+    ),
+    Provider<MetricSyncTrigger>.value(
+      value: FakeSyncTrigger(),
     ),
   ];
 }

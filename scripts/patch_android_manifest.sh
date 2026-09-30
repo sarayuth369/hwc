@@ -39,6 +39,13 @@ if ! grep -q 'android.permission.POST_NOTIFICATIONS' "$MANIFEST"; then
   changed=1
 fi
 
+if ! grep -q 'android.permission.RECORD_AUDIO' "$MANIFEST"; then
+  sed -i '/<manifest /a\
+    <!-- Required by speech_to_text for real on-device voice input in AI Talk. -->\
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>' "$MANIFEST"
+  changed=1
+fi
+
 APP_LABEL="Health-Wellness-Companion"
 if ! grep -q "android:label=\"$APP_LABEL\"" "$MANIFEST"; then
   sed -i "s/android:label=\"[^\"]*\"/android:label=\"$APP_LABEL\"/" "$MANIFEST"

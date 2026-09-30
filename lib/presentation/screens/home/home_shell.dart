@@ -24,6 +24,12 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 0;
   int _unreadCount = 0;
+  // Bumped whenever Health's data might be stale -- rekeying HealthScreen
+  // forces Flutter to recreate its element (HealthScreen is otherwise a
+  // `const` StatelessWidget kept alive by IndexedStack, so its FutureBuilder
+  // queries would only ever run once, at first tab build).
+  int _healthRefreshGen = 0;
+  static const _healthTabIndex = 1;
   static const _notificationsTabIndex = 3;
   // Ads only on the two screens the prompt calls out as "suitable,
   // non-sensitive" -- never on AI Talk (chat input), Notifications, or
@@ -59,9 +65,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   void _select(int i) {
     final leavingNotifications = _index == _notificationsTabIndex && i != _notificationsTabIndex;
-    setState(() => _index = i);
+    final enteringHealth = i == _healthTabIndex && _index != _healthTabIndex;
+    setState(() {
+      _index = i;
+      if (enteringHealth) _healthRefreshGen++;
+    });
     if (leavingNotifications) _refreshUnreadCount();
   }
+
+  void _onHomeDataChanged() => setState(() => _healthRefreshGen++);
 
   @override
   Widget build(BuildContext context) {
@@ -73,8 +85,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             child: IndexedStack(
               index: _index,
               children: [
-                HomeScreen(onTalkToAi: () => _select(2)),
-                const HealthScreen(embedded: true),
+                HomeScreen(
+                  onTalkToAi: () => _select(2),
+                  onDataChanged: _onHomeDataChanged,
+                ),
+                HealthScreen(key: ValueKey(_healthRefreshGen), embedded: true),
                 const AiChatScreen(),
                 const NotificationsScreen(),
                 const ProfileScreen(),
@@ -110,7 +125,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             key: const Key('navNotifications'),
             icon: _BellIcon(count: _unreadCount, filled: false),
             selectedIcon: _BellIcon(count: _unreadCount, filled: true),
-            label: 'Notifications',
+            label: 'Notify',
+            tooltip: 'Notifications',
           ),
           const NavigationDestination(
             key: Key('navProfile'),

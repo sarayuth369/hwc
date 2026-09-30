@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/analytics/analytics_events.dart';
 import '../../../core/analytics/analytics_service.dart';
+import '../../../data/local/sync_service.dart';
 import '../../../domain/models/activity_record.dart';
 import '../../../domain/models/sleep_record.dart';
 import '../../../domain/models/water_record.dart';
@@ -18,19 +19,37 @@ import '../health/health_screen.dart';
 /// Opens the icon-led Quick Add sheet (one row per metric type, each logs a
 /// sensible default with a single tap — matching the product-vision board's
 /// Quick Add mockup). Replaces the old stacked-button `QuickActionsScreen`.
-Future<void> showQuickAddSheet(BuildContext context) {
-  return showModalBottomSheet<void>(
+///
+/// [onChanged] fires once the sheet closes (however it closes — the X
+/// button or dismissing the barrier) — callers use it to refresh whatever
+/// summary/history views they show, since the metric repositories write
+/// through an offline-first local queue and nothing else would otherwise
+/// tell an already-built Home/Health screen that new data exists. Firing
+/// unconditionally (rather than only when something was actually logged)
+/// costs one extra cheap read and avoids fragile tracking of every way a
+/// modal sheet can be dismissed.
+Future<void> showQuickAddSheet(BuildContext context, {VoidCallback? onChanged}) async {
+  await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
-    builder: (_) => const QuickAddSheet(),
+    builder: (_) => QuickAddSheet(onChanged: onChanged),
   );
+  onChanged?.call();
 }
 
 class QuickAddSheet extends StatefulWidget {
-  const QuickAddSheet({super.key});
+  const QuickAddSheet({super.key, this.onChanged});
+
+  /// Also invoked directly (in addition to the outer `showQuickAddSheet`
+  /// wrapper's own call) for the Food/More rows, which pop this sheet
+  /// *before* pushing their destination screen — by the time that pushed
+  /// screen is later popped, the wrapper's own await has long since
+  /// resolved, so nothing would otherwise fire a refresh at the point data
+  /// actually changed.
+  final VoidCallback? onChanged;
 
   @override
   State<QuickAddSheet> createState() => _QuickAddSheetState();
@@ -49,24 +68,34 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
     return userId;
   }
 
+  /// Metric writes go through an offline-first local queue (see
+  /// `SyncService`'s doc comment) that would otherwise only reach Supabase
+  /// on the next up-to-30s timer tick. Pushing it now means the write has
+  /// already landed by the time this sheet closes and the caller refreshes
+  /// — without this, "Logged ..." would show immediately while Home/Health
+  /// kept showing stale data for up to 30 more seconds.
+  Future<void> _syncNow() => context.read<MetricSyncTrigger>().syncPending();
+
   Future<void> _logWater() async {
     final userId = _requireUserId();
     if (userId == null) return;
     await context.read<WaterRepository>().logWater(
           WaterRecord(userId: userId, loggedAt: DateTime.now(), amountMl: 250),
         );
+    await _syncNow();
     unawaited(_analytics.capture(AnalyticsEvent.waterLogged));
     if (!mounted) return;
     setState(() => _status = 'Logged 250ml of water.');
   }
 
-  void _openFoodScanner() {
+  Future<void> _openFoodScanner() async {
     final userId = _requireUserId();
     if (userId == null) return;
     Navigator.of(context).pop();
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const FoodScannerScreen()),
     );
+    widget.onChanged?.call();
   }
 
   Future<void> _logWalk() async {
@@ -80,6 +109,7 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
             activityType: 'walking',
           ),
         );
+    await _syncNow();
     if (!mounted) return;
     setState(() => _status = 'Logged a 20-minute walk.');
   }
@@ -98,6 +128,7 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
     await context.read<WeightRepository>().logWeight(
           WeightRecord(userId: userId, loggedAt: DateTime.now(), weightKg: 70),
         );
+    await _syncNow();
     unawaited(_analytics.capture(AnalyticsEvent.weightLogged));
     if (!mounted) return;
     setState(() => _status = "Logged today's weight.");
@@ -109,6 +140,7 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
     await context.read<SleepRepository>().logSleep(
           SleepRecord(userId: userId, loggedAt: DateTime.now(), hoursSlept: 7.5),
         );
+    await _syncNow();
     if (!mounted) return;
     setState(() => _status = 'Logged 7.5 hours of sleep.');
   }

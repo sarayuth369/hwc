@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:bkknex_health_app/data/local/sync_service.dart';
 import 'package:bkknex_health_app/domain/repositories/ai_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/current_user_service.dart';
 import 'package:bkknex_health_app/domain/repositories/metric_repositories.dart';
@@ -20,6 +21,7 @@ Widget _wrap({
       Provider<ProfileRepository>.value(value: FakeProfileRepository()),
       Provider<CurrentUserService>.value(value: FakeCurrentUserService()),
       Provider<NutritionRepository>.value(value: nutritionRepository),
+      Provider<MetricSyncTrigger>.value(value: FakeSyncTrigger()),
     ],
     child: const MaterialApp(home: FoodScannerScreen()),
   );
@@ -89,6 +91,11 @@ void main() {
       'Grilled chicken bowl',
     );
     await tester.tap(find.byKey(const Key('foodScannerAddToTodayButton')));
+    await tester.pumpAndSettle();
+
+    // A confirmation dialog now sits between the button tap and the actual
+    // save (the vision guess isn't always right — see HWC_DECISIONS.md).
+    await tester.tap(find.text('Confirm'));
     await tester.pumpAndSettle();
 
     expect(nutritionRepository.logged, hasLength(1));

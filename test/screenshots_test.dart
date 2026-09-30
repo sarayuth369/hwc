@@ -20,6 +20,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:bkknex_health_app/core/accessibility/accessibility_mode_controller.dart';
 import 'package:bkknex_health_app/core/theme/app_theme.dart';
 import 'package:bkknex_health_app/core/theme/senior_mode_theme.dart';
+import 'package:bkknex_health_app/data/local/sync_service.dart';
 import 'package:bkknex_health_app/domain/models/accessibility_mode.dart';
 import 'package:bkknex_health_app/domain/models/wellness_summary.dart';
 import 'package:bkknex_health_app/domain/repositories/current_user_service.dart';
@@ -29,6 +30,13 @@ import 'package:bkknex_health_app/presentation/screens/onboarding/onboarding_scr
 import 'package:bkknex_health_app/presentation/screens/quick_actions/quick_add_sheet.dart';
 
 import 'support/fake_repositories.dart';
+
+// A fixed clock so `HomeScreen`'s greeting ("Good Morning"/"Good Afternoon"/
+// "Good Evening" -- different lengths) can't change these goldens depending
+// on the real hour a test happens to run at (confirmed root cause of a
+// previously-mysterious, reproducible-yet-code-unrelated golden diff: see
+// HWC_DECISIONS.md).
+DateTime _fixedMorning() => DateTime(2026, 1, 1, 9);
 
 Widget _themedApp(
   Widget home, {
@@ -116,7 +124,7 @@ void main() {
       });
 
     await tester.pumpWidget(_themedApp(
-      const Scaffold(body: HomeScreen()),
+      const Scaffold(body: HomeScreen(now: _fixedMorning)),
       controller: AccessibilityModeController(prefs),
       extraProviders: fullProviderSet(prefs: prefs, dailySummaryRepository: summaryRepo),
     ));
@@ -149,6 +157,7 @@ void main() {
         Provider<ActivityRepository>.value(value: FakeActivityRepository()),
         Provider<WeightRepository>.value(value: FakeWeightRepository()),
         Provider<SleepRepository>.value(value: FakeSleepRepository()),
+        Provider<MetricSyncTrigger>.value(value: FakeSyncTrigger()),
       ],
     ));
     await tester.tap(find.text('Open Quick Add'));
@@ -167,7 +176,7 @@ void main() {
     final controller = AccessibilityModeController(prefs);
 
     await tester.pumpWidget(_themedApp(
-      const Scaffold(body: HomeScreen()),
+      const Scaffold(body: HomeScreen(now: _fixedMorning)),
       controller: controller,
       extraProviders: fullProviderSet(prefs: prefs),
     ));
