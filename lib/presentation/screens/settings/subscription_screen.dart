@@ -156,23 +156,25 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     DecoratedBox(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
+                        boxShadow: const [
                           BoxShadow(
-                            color: theme.colorScheme.primary.withValues(alpha: 0.35),
+                            color: Color(0x59FFC107),
                             blurRadius: 20,
-                            offset: const Offset(0, 8),
+                            offset: Offset(0, 8),
                           ),
                         ],
                       ),
                       child: FilledButton(
                         key: const Key('subscribeButton'),
                         style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFFFC107),
+                          foregroundColor: Colors.black87,
                           padding: const EdgeInsets.symmetric(vertical: 18),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
                           textStyle: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         onPressed: _purchasing ? null : _purchase,
@@ -252,25 +254,25 @@ class _HeroHeader extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
+        // Same purple/blue + gold direction as `PremiumPromoCard` (Home/
+        // Profile) so Premium reads as one consistent brand moment
+        // wherever the user meets it, not a different look per screen.
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            theme.colorScheme.primary,
-            Color.lerp(theme.colorScheme.primary, Colors.black, 0.35)!,
-          ],
+          colors: [Color(0xFF6A11CB), Color(0xFF2447E0)],
         ),
       ),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
+            decoration: const BoxDecoration(
+              color: Color(0xFFFFC107),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.workspace_premium, size: 40, color: Colors.white),
+            child: const Icon(Icons.workspace_premium, size: 40, color: Colors.black87),
           ),
           const SizedBox(height: 16),
           Text(
@@ -298,15 +300,15 @@ class _HeroHeader extends StatelessWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(999),
               ),
-              child: Row(
+              child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.check_circle, size: 18, color: theme.colorScheme.primary),
-                  const SizedBox(width: 6),
+                  Icon(Icons.check_circle, size: 18, color: Color(0xFF6A11CB)),
+                  SizedBox(width: 6),
                   Text(
                     'Premium active',
                     style: TextStyle(
-                      color: theme.colorScheme.primary,
+                      color: Color(0xFF6A11CB),
                       fontWeight: FontWeight.w600,
                     ),
                   ),

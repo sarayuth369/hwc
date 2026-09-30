@@ -164,6 +164,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('quickAddWaterRow')));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('quickEntrySaveButton')));
+    await tester.pumpAndSettle();
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('screenshots/3_quick_action_logged.png'),

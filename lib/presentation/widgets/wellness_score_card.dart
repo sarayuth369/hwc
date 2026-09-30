@@ -98,6 +98,20 @@ class WellnessScoreCard extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Text(
+              band.meaning,
+              key: const Key('wellnessScoreMeaning'),
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Based on today\'s ${_contributingMetrics(summary.componentScores.keys)}',
+              key: const Key('wellnessScoreContributors'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
             if (summary.explanation.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(
@@ -113,18 +127,44 @@ class WellnessScoreCard extends StatelessWidget {
       ),
     );
   }
+
+  static String _contributingMetrics(Iterable<String> keys) {
+    const labels = {
+      'sleep': 'Sleep',
+      'activity': 'Activity',
+      'water': 'Water',
+      'nutrition': 'Nutrition',
+    };
+    final names = keys.map((k) => labels[k] ?? k).toList();
+    if (names.isEmpty) return 'logged metrics';
+    if (names.length == 1) return names.single;
+    return '${names.sublist(0, names.length - 1).join(', ')} and ${names.last}';
+  }
 }
 
 class _ScoreBand {
-  const _ScoreBand(this.label, this.color);
+  const _ScoreBand(this.label, this.color, this.meaning);
 
   final String label;
   final Color color;
+  final String meaning;
 
   factory _ScoreBand.forScore(int score, ColorScheme colors) {
-    if (score >= 75) return _ScoreBand('GOOD', colors.secondary);
-    if (score >= 50) return _ScoreBand('FAIR', colors.tertiary);
-    return _ScoreBand('NEEDS CARE', colors.error);
+    if (score >= 75) {
+      return _ScoreBand('GOOD', colors.secondary, "You're doing great today.");
+    }
+    if (score >= 50) {
+      return _ScoreBand(
+        'FAIR',
+        colors.tertiary,
+        'A solid day — a bit more balance could help.',
+      );
+    }
+    return _ScoreBand(
+      'NEEDS CARE',
+      colors.error,
+      "Today's numbers suggest your body could use more rest, movement, or water.",
+    );
   }
 }
 

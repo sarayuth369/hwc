@@ -76,6 +76,64 @@ void main() {
     );
   });
 
+  testWidgets(
+      'a structured JSON reply renders as labeled fields with a confidence badge',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1400));
+    final aiRepository = FakeAiRepository()
+      ..chatResponse = {
+        'reply': '{"dish": "Fried rice", "confidence": "medium", '
+            '"portion": "1 plate, ~400g", "calories": 650, '
+            '"protein_g": 20, "carbs_g": 80, "fat_g": 22, '
+            '"notes": "Varies with oil and added protein."}',
+        'conversationId': 'c1',
+      };
+
+    await tester.pumpWidget(_wrap(
+      aiRepository: aiRepository,
+      nutritionRepository: FakeNutritionRepository(),
+    ));
+
+    await tester.enterText(
+      find.byKey(const Key('foodScannerDescriptionField')),
+      'American fried rice',
+    );
+    await tester.tap(find.byKey(const Key('foodScannerEstimateButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('foodScannerStructuredEstimate')), findsOneWidget);
+    expect(find.byKey(const Key('foodScannerConfidenceBadge')), findsOneWidget);
+    expect(find.text('medium confidence'), findsOneWidget);
+    expect(find.text('650'), findsOneWidget);
+    expect(find.byKey(const Key('foodScannerEstimateText')), findsNothing);
+  });
+
+  testWidgets(
+      'a reply that is not valid JSON falls back to plain prose, never crashes',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1400));
+    final aiRepository = FakeAiRepository()
+      ..chatResponse = {
+        'reply': 'Sorry, I could not estimate that confidently: {broken',
+        'conversationId': 'c1',
+      };
+
+    await tester.pumpWidget(_wrap(
+      aiRepository: aiRepository,
+      nutritionRepository: FakeNutritionRepository(),
+    ));
+
+    await tester.enterText(
+      find.byKey(const Key('foodScannerDescriptionField')),
+      'Mystery dish',
+    );
+    await tester.tap(find.byKey(const Key('foodScannerEstimateButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('foodScannerStructuredEstimate')), findsNothing);
+    expect(find.byKey(const Key('foodScannerEstimateText')), findsOneWidget);
+  });
+
   testWidgets('Add to Today logs via the existing NutritionRepository',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(390, 1400));

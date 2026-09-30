@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../../core/ai/health_context.dart';
 import '../../../core/nutrition/meal_type.dart';
 import '../../../domain/models/ai_chat_failure.dart';
+import '../../../domain/models/nutrition_estimate.dart';
 import '../../../domain/models/nutrition_record.dart';
 import '../../../domain/repositories/ai_repository.dart';
 import '../../../domain/repositories/current_user_service.dart';
@@ -40,6 +41,7 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
   bool _isEstimating = false;
   bool _isSaving = false;
   String? _estimate;
+  NutritionEstimate? _structuredEstimate;
   AiChatFailure? _failure;
   String? _saveMessage;
 
@@ -55,6 +57,7 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
     setState(() {
       _photo = photo;
       _estimate = null;
+      _structuredEstimate = null;
       _failure = null;
       _saveMessage = null;
     });
@@ -101,6 +104,7 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
     setState(() {
       _isEstimating = true;
       _failure = null;
+      _structuredEstimate = null;
       _saveMessage = null;
     });
 
@@ -108,13 +112,26 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
       final healthContext = await buildHealthContext(profileRepository);
       final response = await aiRepository.chat({
         'message':
-            'Give a brief, practical estimate of calories and macros '
-            '(protein, carbs, fat) for this meal: "$description". '
-            'Keep it short — this is a rough estimate, not exact.',
+            'Give a nutrition estimate for this meal: "$description". '
+            'Respond with ONLY a compact JSON object, no other text, in '
+            'exactly this shape: {"dish": string, "confidence": '
+            '"low" | "medium" | "high", "portion": string (e.g. "1 bowl, '
+            '~350g"), "calories": number, "protein_g": number, "carbs_g": '
+            'number, "fat_g": number, "notes": string (one short caveat)}. '
+            'This is a rough estimate, not exact -- reflect that honestly '
+            'in "confidence" and "notes" rather than overstating precision.',
         'healthContext': healthContext,
       });
       if (!mounted) return;
-      setState(() => _estimate = response['reply'] as String?);
+      final reply = response['reply'] as String? ?? '';
+      setState(() {
+        _estimate = reply;
+        // Tolerant: the chat endpoint has its own safety pre/post
+        // processing and isn't a guaranteed structured-output API, so a
+        // parse failure falls back to showing the raw reply as prose
+        // (below) rather than crashing or inventing missing fields.
+        _structuredEstimate = NutritionEstimate.tryParse(reply);
+      });
     } on AiChatFailure catch (failure) {
       if (!mounted) return;
       setState(() => _failure = failure);
@@ -135,13 +152,21 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
     // was misread as a kiwi/citrus fruit) -- require an explicit confirm of
     // exactly what will be logged, rather than saving whatever is still in
     // the editable field the moment the button is tapped.
+    final structured = _structuredEstimate;
+    final estimateSummary = structured != null
+        ? '\n\n~${structured.calories.round()} kcal · '
+            '${structured.proteinG.round()}g protein · '
+            '${structured.carbsG.round()}g carbs · '
+            '${structured.fatG.round()}g fat '
+            '(${structured.confidence} confidence)'
+        : (_estimate != null ? '\n\n$_estimate' : '');
     final confirmed = await showConfirmationDialog(
       context,
       title: 'Add this to today?',
       message: description.isEmpty
           ? 'No description entered — this will be logged as "Scanned meal" with no nutrition estimate tied to it.'
           : 'Logging: "$description"'
-              '${_estimate != null ? '\n\n$_estimate' : ''}'
+              '$estimateSummary'
               '\n\nDouble-check the food name above is correct before adding — the AI\'s guess isn\'t always right.',
     );
     if (!confirmed || !mounted) return;
@@ -281,7 +306,10 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
                 style: TextStyle(color: theme.colorScheme.error),
               ),
             ],
-            if (_estimate != null) ...[
+            if (_structuredEstimate != null) ...[
+              const SizedBox(height: 16),
+              _StructuredEstimateCard(estimate: _structuredEstimate!),
+            ] else if (_estimate != null) ...[
               const SizedBox(height: 16),
               Card(
                 child: Padding(
@@ -306,6 +334,102 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Renders the nutrition-estimate model's structured JSON reply as labeled
+/// fields (portion/calories/macros) with a visible confidence badge and
+/// caveat, instead of a single prose blob — this is still just an LLM's
+/// estimate from a text description, never a claim that any model "saw"
+/// the photo directly (the vision step is separate and unchanged).
+class _StructuredEstimateCard extends StatelessWidget {
+  const _StructuredEstimateCard({required this.estimate});
+
+  final NutritionEstimate estimate;
+
+  Color _confidenceColor(ColorScheme colors) => switch (estimate.confidence.toLowerCase()) {
+        'high' => colors.secondary,
+        'low' => colors.error,
+        _ => colors.tertiary,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final confidenceColor = _confidenceColor(theme.colorScheme);
+    return Card(
+      key: const Key('foodScannerStructuredEstimate'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    estimate.dish,
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: confidenceColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${estimate.confidence} confidence',
+                    key: const Key('foodScannerConfidenceBadge'),
+                    style: TextStyle(color: confidenceColor, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(estimate.portion, style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _MacroStat(label: 'Calories', value: '${estimate.calories.round()}'),
+                _MacroStat(label: 'Protein', value: '${estimate.proteinG.round()}g'),
+                _MacroStat(label: 'Carbs', value: '${estimate.carbsG.round()}g'),
+                _MacroStat(label: 'Fat', value: '${estimate.fatG.round()}g'),
+              ],
+            ),
+            if (estimate.notes != null && estimate.notes!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                estimate.notes!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MacroStat extends StatelessWidget {
+  const _MacroStat({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Expanded(
+      child: Column(
+        children: [
+          Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          Text(label, style: theme.textTheme.bodySmall),
+        ],
       ),
     );
   }

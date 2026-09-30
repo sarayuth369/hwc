@@ -6,6 +6,7 @@ import '../../../domain/repositories/daily_summary_repository.dart';
 import '../../../domain/repositories/metric_repositories.dart';
 import '../../../domain/repositories/profile_repository.dart';
 import '../../widgets/ai_insight_card.dart';
+import '../../widgets/premium_promo_card.dart';
 import '../../widgets/wellness_score_card.dart';
 import '../quick_actions/quick_add_sheet.dart';
 
@@ -205,6 +206,8 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.add),
             label: const Text('Quick Add'),
           ),
+          const SizedBox(height: 16),
+          const PremiumPromoCard(),
         ],
       ),
     );

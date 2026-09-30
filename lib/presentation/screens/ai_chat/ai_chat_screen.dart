@@ -46,7 +46,26 @@ class _AiChatScreenState extends State<AiChatScreen> {
   bool _historyLoaded = false;
   bool _speechInitialized = false;
   bool _isListening = false;
+  bool _isSpeaking = false;
+  bool _autoSpeak = true;
   String? _voiceError;
+
+  @override
+  void initState() {
+    super.initState();
+    _tts.setStartHandler(() {
+      if (mounted) setState(() => _isSpeaking = true);
+    });
+    _tts.setCompletionHandler(() {
+      if (mounted) setState(() => _isSpeaking = false);
+    });
+    _tts.setCancelHandler(() {
+      if (mounted) setState(() => _isSpeaking = false);
+    });
+    _tts.setErrorHandler((_) {
+      if (mounted) setState(() => _isSpeaking = false);
+    });
+  }
 
   @override
   void dispose() {
@@ -99,6 +118,10 @@ class _AiChatScreenState extends State<AiChatScreen> {
       if (mounted) setState(() => _isListening = false);
       return;
     }
+
+    // Never listen and speak at once -- an in-progress reply being read
+    // aloud would otherwise get picked up by the microphone.
+    if (_isSpeaking) await _tts.stop();
 
     if (!_speechInitialized) {
       // `initialize()` only ever completes via a native->Dart status
@@ -160,8 +183,18 @@ class _AiChatScreenState extends State<AiChatScreen> {
   }
 
   Future<void> _speak(String text) async {
+    // Never listen and speak at once (see `_toggleListening`'s comment).
+    if (_isListening) {
+      await _speech.stop();
+      if (mounted) setState(() => _isListening = false);
+    }
     await _tts.stop();
     await _tts.speak(text);
+  }
+
+  Future<void> _toggleAutoSpeak() async {
+    if (_isSpeaking) await _tts.stop();
+    setState(() => _autoSpeak = !_autoSpeak);
   }
 
   Future<void> _send([String? message]) async {
@@ -190,16 +223,18 @@ class _AiChatScreenState extends State<AiChatScreen> {
       });
       if (!mounted) return;
       final safetyFlag = response['safetyFlag'] as Map<String, dynamic>?;
+      final reply = response['reply'] as String? ?? '';
       setState(() {
         _conversationId = response['conversationId'] as String?;
         _messages.add(ChatMessage(
-          text: response['reply'] as String? ?? '',
+          text: reply,
           fromUser: false,
           requiresProfessionalCare:
               safetyFlag?['requiresProfessionalCare'] == true,
         ));
       });
       _scrollToEnd();
+      if (_autoSpeak && reply.isNotEmpty) unawaited(_speak(reply));
       await historyStore.saveMessages(_messages);
       await historyStore.saveConversationId(_conversationId);
     } on AiChatFailure catch (failure) {
@@ -228,16 +263,34 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
     return Column(
       children: [
-        if (_messages.isNotEmpty)
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              key: const Key('aiChatNewConversationButton'),
-              onPressed: () => _newConversation(context.read<ChatHistoryStore>()),
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('New conversation'),
-            ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                key: const Key('aiChatAutoSpeakToggle'),
+                tooltip: _isSpeaking
+                    ? 'Stop speaking'
+                    : (_autoSpeak ? 'Mute AI voice replies' : 'Unmute AI voice replies'),
+                onPressed: _toggleAutoSpeak,
+                icon: Icon(
+                  _isSpeaking
+                      ? Icons.stop_circle_outlined
+                      : (_autoSpeak ? Icons.volume_up : Icons.volume_off),
+                  color: _isSpeaking ? theme.colorScheme.error : null,
+                ),
+              ),
+              if (_messages.isNotEmpty)
+                TextButton.icon(
+                  key: const Key('aiChatNewConversationButton'),
+                  onPressed: () => _newConversation(context.read<ChatHistoryStore>()),
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('New conversation'),
+                ),
+            ],
           ),
+        ),
         Expanded(
           child: _messages.isEmpty
               ? _EmptyState(onPromptTap: (prompt) => _send(prompt))

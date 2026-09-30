@@ -163,4 +163,22 @@ void main() {
 
     expect(find.byKey(const Key('aiChatSpeakButton')), findsOneWidget);
   });
+
+  testWidgets('the mute toggle is present and flips the auto-speak preference',
+      (tester) async {
+    await tester.pumpWidget(
+      await _wrap(
+        userService: FakeCurrentUserService(),
+        aiRepository: FakeAiRepository(),
+      ),
+    );
+
+    // Auto-speak defaults on -- muted icon should not be showing yet.
+    expect(find.byIcon(Icons.volume_up), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('aiChatAutoSpeakToggle')));
+    await tester.pump();
+
+    expect(find.byIcon(Icons.volume_off), findsOneWidget);
+  });
 }

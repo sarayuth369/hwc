@@ -39,8 +39,24 @@ class _WellnessTrendSectionState extends State<WellnessTrendSection> {
                   );
                 }
                 final trend = snapshot.data ?? const [];
-                if (trend.isEmpty) {
-                  return const Text('Not enough data yet for a trend.');
+                bool hasRealData(WellnessSummary s) =>
+                    s.wellnessScore != null &&
+                    s.wellnessScore != 0 &&
+                    s.componentScores.isNotEmpty;
+                // A row of 7 dashes (nothing logged all week) is still
+                // "unexplained dashes" from the user's point of view even
+                // though each individual dash is honest — show the same
+                // plain-language empty state as a genuinely empty trend
+                // instead of technically-correct-but-confusing placeholders.
+                if (trend.isEmpty || !trend.any(hasRealData)) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Not enough data yet — log a metric on a few days to '
+                      'see your trend here.',
+                      key: Key('wellnessTrendEmptyState'),
+                    ),
+                  );
                 }
                 return SizedBox(
                   height: 100,
@@ -50,15 +66,7 @@ class _WellnessTrendSectionState extends State<WellnessTrendSection> {
                       for (final summary in trend)
                         Builder(
                           builder: (context) {
-                            // Same fix as WellnessScoreCard (real-device
-                            // evidence showed this arriving as an all-zero
-                            // componentScores map, not an empty one, for a
-                            // no-data day) -- a zero score with no non-zero
-                            // component reads as "no entry" (a dash, no
-                            // bar), not as a real 0 day among six real ones.
-                            final hasData = summary.wellnessScore != null &&
-                                summary.wellnessScore != 0 &&
-                                summary.componentScores.isNotEmpty;
+                            final hasData = hasRealData(summary);
                             return Expanded(
                               child: Padding(
                                 padding:

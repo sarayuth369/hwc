@@ -37,6 +37,12 @@ class FakeAuthRepository implements AuthRepository {
   final _controller = StreamController<bool>.broadcast();
   bool _signedIn = true;
 
+  /// When true, mirrors a Supabase project with email confirmation
+  /// enabled: `signUp()` succeeds but leaves `isSignedIn` false until a
+  /// test explicitly calls `setSignedIn(true)` (simulating the user
+  /// tapping the emailed confirmation link).
+  bool requiresConfirmation = false;
+
   @override
   bool get isSignedIn => _signedIn;
 
@@ -50,7 +56,7 @@ class FakeAuthRepository implements AuthRepository {
 
   @override
   Future<void> signUp({required String email, required String password}) async {
-    setSignedIn(true);
+    if (!requiresConfirmation) setSignedIn(true);
   }
 
   @override

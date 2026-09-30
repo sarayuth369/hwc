@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../domain/models/user_profile.dart';
 import '../../../domain/repositories/auth_repository.dart';
 import '../../../domain/repositories/profile_repository.dart';
+import '../../widgets/premium_promo_card.dart';
 import '../settings/settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -101,6 +102,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 24),
+            const PremiumPromoCard(),
+            const SizedBox(height: 16),
             Card(
               child: ListTile(
                 leading: const Icon(Icons.settings_outlined),

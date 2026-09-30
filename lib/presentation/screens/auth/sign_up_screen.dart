@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +10,16 @@ import '../../../domain/repositories/auth_repository.dart';
 /// `authStateChanges` and moves on to the name step automatically — this
 /// screen has nothing more to do than pop back to `SignInScreen`'s stack
 /// position (which `AuthGate` will have already replaced by then).
+///
+/// The confirmation-required path needs the same handling for a *later*
+/// session: the user leaves this screen showing "check your email",
+/// backgrounds the app, taps the confirmation link (which resumes the app
+/// via the deep link and creates a session), and returns to find this
+/// screen still on top, exactly where they left it — `AuthGate` has
+/// already swapped underneath by then, same as the immediate-session case,
+/// just delayed. This screen listens for that and pops itself the moment
+/// it happens, so returning from the email link lands on Welcome/Home
+/// directly instead of requiring a manual "Back to sign in" tap.
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
 
@@ -24,13 +36,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   String? _infoMessage;
+  StreamSubscription<bool>? _authSubscription;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _authSubscription?.cancel();
     super.dispose();
+  }
+
+  void _watchForConfirmation(AuthRepository authRepository) {
+    _authSubscription ??= authRepository.authStateChanges.listen((signedIn) {
+      if (signedIn && mounted) Navigator.of(context).pop();
+    });
   }
 
   Future<void> _signUp() async {
@@ -76,9 +96,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
         Navigator.of(context).pop();
         return;
       }
-      // Email confirmation required before a session exists.
+      // Email confirmation required before a session exists. Start
+      // watching now -- the confirmation may complete while this screen
+      // is still showing (see the class doc comment above).
+      _watchForConfirmation(authRepository);
       setState(() {
-        _infoMessage = 'Check your email to confirm your account, then sign in.';
+        _infoMessage = "Check your email — we've sent a confirmation link. "
+            "Tap it and you'll come straight back into the app.";
       });
     } on AuthFailure catch (failure) {
       if (!mounted) return;
