@@ -6,12 +6,12 @@ import '../../../domain/billing/billing_service.dart';
 import '../../../domain/repositories/subscription_repository.dart';
 
 const _premiumFeatures = [
-  'AI Health Coach — deeper, personalized guidance',
-  'Food Scan AI — unlimited photo-based nutrition estimates',
-  'Advanced Insights — weekly trend analysis',
-  'Family Mode — keep an eye on a loved one\'s wellness',
-  'Health Report Reader — unlimited document reads',
-  'No ads',
+  (Icons.psychology_outlined, 'AI Health Coach', 'Deeper, personalized guidance'),
+  (Icons.camera_alt_outlined, 'Food Scan AI', 'Unlimited photo-based nutrition estimates'),
+  (Icons.insights_outlined, 'Advanced Insights', 'Weekly trend analysis'),
+  (Icons.family_restroom_outlined, 'Family Mode', "Keep an eye on a loved one's wellness"),
+  (Icons.description_outlined, 'Health Report Reader', 'Unlimited document reads'),
+  (Icons.block_flipped, 'No ads', 'A clean, uninterrupted experience'),
 ];
 
 /// Real paywall UI wired to the real `BillingService` (Google Play
@@ -106,110 +106,246 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('HWC Premium')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         children: [
-          Icon(
-            Icons.workspace_premium_outlined,
-            size: 48,
-            color: theme.colorScheme.tertiary,
+          _HeroHeader(isPremium: isPremium, theme: theme),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      for (final (icon, title, subtitle) in _premiumFeatures)
+                        _BenefitRow(icon: icon, title: title, subtitle: subtitle, theme: theme),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                if (!isPremium) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _PlanCard(
+                          key: const Key('planMonthly'),
+                          label: 'Monthly',
+                          price: monthly?.formattedPrice ?? r'$3.99/mo',
+                          selected: _selected == BillingPeriod.monthly,
+                          onTap: () => setState(() => _selected = BillingPeriod.monthly),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _PlanCard(
+                          key: const Key('planYearly'),
+                          label: 'Yearly',
+                          price: yearly?.formattedPrice ?? r'$44.99/yr',
+                          badge: 'Best value',
+                          selected: _selected == BillingPeriod.yearly,
+                          onTap: () => setState(() => _selected = BillingPeriod.yearly),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  if (_loadingProducts)
+                    const Center(child: CircularProgressIndicator())
+                  else ...[
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: theme.colorScheme.primary.withValues(alpha: 0.35),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: FilledButton(
+                        key: const Key('subscribeButton'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          textStyle: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        onPressed: _purchasing ? null : _purchase,
+                        child: Text(_purchasing
+                            ? 'Please wait...'
+                            : 'Subscribe — ${_selected == BillingPeriod.monthly ? monthly?.formattedPrice ?? r'$3.99/mo' : yearly?.formattedPrice ?? r'$44.99/yr'}'),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Center(
+                      child: TextButton(
+                        key: const Key('restorePurchasesButton'),
+                        onPressed: _restoring ? null : _restore,
+                        child: Text(_restoring ? 'Restoring...' : 'Restore purchases'),
+                      ),
+                    ),
+                    if (!hasRealProducts) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: theme.colorScheme.outlineVariant),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.info_outline, size: 20, color: theme.colorScheme.onSurfaceVariant),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'These plans aren\'t set up for purchase in Google Play '
+                                'yet — prices above are illustrative until M configures '
+                                'hwc_premium_monthly / hwc_premium_yearly in Play '
+                                'Console. Tapping Subscribe won\'t charge anyone before then.',
+                                key: const Key('subscriptionNotConfiguredMessage'),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                  if (_message != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _message!,
+                      key: const Key('subscriptionMessage'),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ],
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          Text('Get more from HWC', style: theme.textTheme.headlineMedium),
+        ],
+      ),
+    );
+  }
+}
+
+/// The paywall's hero banner — a tasteful brand-blue gradient surface
+/// (rather than a plain icon on the scaffold background) so the screen
+/// reads as a deliberate premium upsell, not a settings sub-page.
+class _HeroHeader extends StatelessWidget {
+  const _HeroHeader({required this.isPremium, required this.theme});
+
+  final bool isPremium;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primary,
+            Color.lerp(theme.colorScheme.primary, Colors.black, 0.35)!,
+          ],
+        ),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.workspace_premium, size: 40, color: Colors.white),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Get more from HWC',
+            style: theme.textTheme.headlineMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 8),
-          if (isPremium)
+          Text(
+            'Unlock deeper AI guidance and a calmer, ad-free experience.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: Colors.white.withValues(alpha: 0.9),
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (isPremium) ...[
+            const SizedBox(height: 16),
             Container(
               key: const Key('premiumActiveBadge'),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: theme.colorScheme.tertiary.withValues(alpha: 0.15),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.check_circle, size: 18, color: theme.colorScheme.tertiary),
+                  Icon(Icons.check_circle, size: 18, color: theme.colorScheme.primary),
                   const SizedBox(width: 6),
-                  Text('Premium active', style: TextStyle(color: theme.colorScheme.tertiary)),
+                  Text(
+                    'Premium active',
+                    style: TextStyle(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
-          const SizedBox(height: 16),
-          Card(
-            child: Column(
-              children: [
-                for (final feature in _premiumFeatures)
-                  ListTile(
-                    leading: Icon(Icons.check, color: theme.colorScheme.secondary),
-                    title: Text(feature),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (!isPremium) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: _PlanCard(
-                    key: const Key('planMonthly'),
-                    label: 'Monthly',
-                    price: monthly?.formattedPrice ?? r'$3.99/mo',
-                    selected: _selected == BillingPeriod.monthly,
-                    onTap: () => setState(() => _selected = BillingPeriod.monthly),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _PlanCard(
-                    key: const Key('planYearly'),
-                    label: 'Yearly',
-                    price: yearly?.formattedPrice ?? r'$44.99/yr',
-                    badge: 'Best value',
-                    selected: _selected == BillingPeriod.yearly,
-                    onTap: () => setState(() => _selected = BillingPeriod.yearly),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (_loadingProducts)
-              const Center(child: CircularProgressIndicator())
-            else ...[
-              FilledButton(
-                key: const Key('subscribeButton'),
-                onPressed: _purchasing ? null : _purchase,
-                child: Text(_purchasing ? 'Please wait...' : 'Subscribe'),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                key: const Key('restorePurchasesButton'),
-                onPressed: _restoring ? null : _restore,
-                child: Text(_restoring ? 'Restoring...' : 'Restore purchases'),
-              ),
-              if (!hasRealProducts) ...[
-                const SizedBox(height: 16),
-                Card(
-                  color: theme.colorScheme.tertiary.withValues(alpha: 0.12),
-                  child: const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text(
-                      'These plans aren\'t set up for purchase in Google Play '
-                      'yet — prices above are illustrative until M configures '
-                      'hwc_premium_monthly / hwc_premium_yearly in Play '
-                      'Console. Tapping Subscribe won\'t charge anyone before then.',
-                      key: Key('subscriptionNotConfiguredMessage'),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-            if (_message != null) ...[
-              const SizedBox(height: 12),
-              Text(_message!, key: const Key('subscriptionMessage')),
-            ],
           ],
         ],
       ),
+    );
+  }
+}
+
+class _BenefitRow extends StatelessWidget {
+  const _BenefitRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.theme,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: theme.colorScheme.primary, size: 22),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle),
     );
   }
 }
@@ -235,49 +371,70 @@ class _PlanCard extends StatelessWidget {
     final theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
+      borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
+          color: selected ? theme.colorScheme.primary.withValues(alpha: 0.08) : null,
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: selected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant,
             width: selected ? 2 : 1,
           ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    label,
-                    style: theme.textTheme.titleMedium,
+            Padding(
+              // Leaves room on the right for the selection-state icon
+              // stacked on top, rather than fighting it for space in a Row
+              // (this exact card was already overflow-fixed once before at
+              // this ~137px width -- keep new elements out of that Row).
+              padding: const EdgeInsets.fromLTRB(16, 16, 28, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          label,
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (badge != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.secondary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            badge!,
+                            style: TextStyle(fontSize: 10, color: theme.colorScheme.secondary),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    price,
+                    style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                if (badge != null) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.secondary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      badge!,
-                      style: TextStyle(fontSize: 10, color: theme.colorScheme.secondary),
-                    ),
-                  ),
                 ],
-              ],
+              ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              price,
-              style: theme.textTheme.headlineSmall,
-              overflow: TextOverflow.ellipsis,
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Icon(
+                selected ? Icons.check_circle : Icons.circle_outlined,
+                size: 18,
+                color: selected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant,
+              ),
             ),
           ],
         ),
