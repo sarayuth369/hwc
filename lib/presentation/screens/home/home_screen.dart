@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/metrics/daily_bucket.dart';
 import '../../../domain/models/wellness_summary.dart';
 import '../../../domain/repositories/daily_summary_repository.dart';
 import '../../../domain/repositories/metric_repositories.dart';
@@ -71,10 +72,21 @@ class _HomeScreenState extends State<HomeScreen> {
     final activityRepository = context.read<ActivityRepository>();
     final waterRepository = context.read<WaterRepository>();
     final nutritionRepository = context.read<NutritionRepository>();
-    final sleep = await sleepRepository.recent(days: 1);
-    final activity = await activityRepository.recent(days: 1);
-    final water = await waterRepository.recent(days: 1);
-    final nutrition = await nutritionRepository.recent(days: 1);
+    // `recent(days: 1)` is a rolling 24h window, not a calendar day -- at
+    // 9am that window reaches back into yesterday evening, which could
+    // show yesterday's dinner as part of "today's" nutrition count. Fetch
+    // 2 days to safely cover the window and filter to today's actual
+    // calendar date (local time) using the same `dayKey` Health's charts
+    // use, so the two screens can never disagree on what counts as today.
+    final todayKey = dayKey(widget.now());
+    final sleep = (await sleepRepository.recent(days: 2))
+        .where((r) => dayKey(r.loggedAt) == todayKey);
+    final activity = (await activityRepository.recent(days: 2))
+        .where((r) => dayKey(r.loggedAt) == todayKey);
+    final water = (await waterRepository.recent(days: 2))
+        .where((r) => dayKey(r.loggedAt) == todayKey);
+    final nutrition = (await nutritionRepository.recent(days: 2))
+        .where((r) => dayKey(r.loggedAt) == todayKey);
     return _TodayMetrics(
       sleepHours: sleep.isEmpty ? null : sleep.last.hoursSlept,
       activeMinutes: activity.fold<int>(0, (sum, a) => sum + (a.activeMinutes ?? 0)),

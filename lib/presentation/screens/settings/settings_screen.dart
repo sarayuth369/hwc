@@ -10,7 +10,6 @@ import '../../../domain/repositories/auth_repository.dart';
 import '../../widgets/senior_mode_toggle.dart';
 import '../family/family_mode_screen.dart';
 import '../health_report/health_report_reader_screen.dart';
-import 'subscription_screen.dart';
 
 /// App version shown in About — kept as a plain constant rather than
 /// pulling in `package_info_plus` for one string; update alongside
@@ -135,7 +134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   RadioListTile<ThemeMode>(
                     key: Key('themeModeLight'),
-                    title: Text('Light'),
+                    title: Text('Healthy'),
                     value: ThemeMode.light,
                   ),
                   RadioListTile<ThemeMode>(
@@ -215,30 +214,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          const _SectionLabel('Subscription'),
-          Card(
-            child: ListTile(
-              key: const Key('subscriptionTile'),
-              leading: const Icon(Icons.workspace_premium_outlined),
-              title: const Text('HWC Premium'),
-              subtitle: const Text('AI Coach · Advanced Insights · No ads'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const _SectionLabel('Coming Soon'),
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.watch_outlined),
-              title: Text('Wearable Sync'),
-              subtitle: Text('Apple Health / Google Fit integration'),
-              enabled: false,
             ),
           ),
           const SizedBox(height: 16),

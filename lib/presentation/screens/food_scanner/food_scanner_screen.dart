@@ -110,7 +110,7 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
 
     try {
       final healthContext = await buildHealthContext(profileRepository);
-      final response = await aiRepository.chat({
+      final requestBody = {
         'message':
             'Give a nutrition estimate for this meal: "$description". '
             'Respond with ONLY a compact JSON object, no other text, in '
@@ -121,7 +121,18 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
             'This is a rough estimate, not exact -- reflect that honestly '
             'in "confidence" and "notes" rather than overstating precision.',
         'healthContext': healthContext,
-      });
+      };
+      Map<String, dynamic> response;
+      try {
+        response = await aiRepository.chat(requestBody);
+      } on AiProviderFailure {
+        // Workers AI is a shared inference service with occasional
+        // transient failures -- one silent retry before surfacing an
+        // error avoids making the user manually retry for a hiccup that
+        // clears up a second later (confirmed by direct testing against
+        // the live Worker: the same request succeeds on a fresh attempt).
+        response = await aiRepository.chat(requestBody);
+      }
       if (!mounted) return;
       final reply = response['reply'] as String? ?? '';
       setState(() {
@@ -300,10 +311,27 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
             ),
             if (_failure != null) ...[
               const SizedBox(height: 12),
-              Text(
-                _failure!.message,
-                key: const Key('foodScannerErrorMessage'),
-                style: TextStyle(color: theme.colorScheme.error),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _failure!.message,
+                      key: const Key('foodScannerErrorMessage'),
+                      style: TextStyle(color: theme.colorScheme.error),
+                    ),
+                  ),
+                  // A provider-side hiccup (Workers AI's shared inference
+                  // service occasionally has transient failures) is often
+                  // resolved by simply trying again -- matching AI Talk's
+                  // existing retry pattern rather than leaving the user to
+                  // discover "just tap Estimate Nutrition again" themselves.
+                  if (_failure is! AiAuthFailure)
+                    TextButton(
+                      key: const Key('foodScannerRetryButton'),
+                      onPressed: _isEstimating ? null : _estimateNutrition,
+                      child: const Text('Try again'),
+                    ),
+                ],
               ),
             ],
             if (_structuredEstimate != null) ...[

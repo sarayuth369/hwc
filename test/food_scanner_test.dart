@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:bkknex_health_app/data/local/sync_service.dart';
+import 'package:bkknex_health_app/domain/models/ai_chat_failure.dart';
 import 'package:bkknex_health_app/domain/repositories/ai_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/current_user_service.dart';
 import 'package:bkknex_health_app/domain/repositories/metric_repositories.dart';
@@ -74,6 +75,76 @@ void main() {
       aiRepository.lastChatRequest?['message'],
       contains('Grilled chicken bowl'),
     );
+  });
+
+  testWidgets(
+      'a transient provider failure is retried once automatically and '
+      'still shows a result, without the user tapping anything',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1400));
+    final aiRepository = FakeAiRepository()
+      ..chatFailuresBeforeSuccess = 1
+      ..chatResponse = {
+        'reply': '{"dish": "Fried rice", "confidence": "medium", '
+            '"portion": "1 plate", "calories": 600, "protein_g": 18, '
+            '"carbs_g": 75, "fat_g": 20, "notes": "Estimate."}',
+        'conversationId': 'c1',
+      };
+
+    await tester.pumpWidget(_wrap(
+      aiRepository: aiRepository,
+      nutritionRepository: FakeNutritionRepository(),
+    ));
+
+    await tester.enterText(
+      find.byKey(const Key('foodScannerDescriptionField')),
+      'Fried rice',
+    );
+    await tester.tap(find.byKey(const Key('foodScannerEstimateButton')));
+    await tester.pumpAndSettle();
+
+    expect(aiRepository.chatCallCount, 2);
+    expect(find.byKey(const Key('foodScannerErrorMessage')), findsNothing);
+    expect(find.byKey(const Key('foodScannerStructuredEstimate')), findsOneWidget);
+  });
+
+  testWidgets(
+      'a persistent provider failure (both attempts fail) shows the error '
+      'with a working "Try again" button',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1400));
+    final aiRepository = FakeAiRepository()..failure = const AiProviderFailure();
+
+    await tester.pumpWidget(_wrap(
+      aiRepository: aiRepository,
+      nutritionRepository: FakeNutritionRepository(),
+    ));
+
+    await tester.enterText(
+      find.byKey(const Key('foodScannerDescriptionField')),
+      'Fried rice',
+    );
+    await tester.tap(find.byKey(const Key('foodScannerEstimateButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('foodScannerErrorMessage')), findsOneWidget);
+    expect(find.byKey(const Key('foodScannerRetryButton')), findsOneWidget);
+
+    // Recover and retry -- the retry button must actually work, not just
+    // be present.
+    aiRepository
+      ..failure = null
+      ..chatResponse = {
+        'reply': '{"dish": "Fried rice", "confidence": "low", '
+            '"portion": "1 plate", "calories": 600, "protein_g": 18, '
+            '"carbs_g": 75, "fat_g": 20, "notes": "Low confidence estimate."}',
+        'conversationId': 'c1',
+      };
+    await tester.tap(find.byKey(const Key('foodScannerRetryButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('foodScannerStructuredEstimate')), findsOneWidget);
+    expect(find.text('low confidence'), findsOneWidget);
   });
 
   testWidgets(

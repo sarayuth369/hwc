@@ -114,17 +114,16 @@ void main() {
     },
   );
 
-  testWidgets('Subscription tile navigates to the honest not-configured screen',
-      (tester) async {
-    final prefs = await SharedPreferences.getInstance();
-    await pumpSettings(tester, prefs);
+  testWidgets(
+    'Settings has no Subscription entry or Coming Soon section — Premium '
+    'now has exactly one entry point (Profile), and Apple Health/Google '
+    'Fit were cut rather than left as a dead placeholder',
+    (tester) async {
+      final prefs = await SharedPreferences.getInstance();
+      await pumpSettings(tester, prefs);
 
-    await tester.tap(find.byKey(const Key('subscriptionTile')));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const Key('subscriptionNotConfiguredMessage')),
-      findsOneWidget,
-    );
-  });
+      expect(find.byKey(const Key('subscriptionTile')), findsNothing);
+      expect(find.text('Wearable Sync'), findsNothing);
+    },
+  );
 }

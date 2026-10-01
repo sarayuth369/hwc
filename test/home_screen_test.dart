@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:bkknex_health_app/domain/models/nutrition_record.dart';
 import 'package:bkknex_health_app/domain/models/wellness_summary.dart';
 import 'package:bkknex_health_app/presentation/screens/home/home_screen.dart';
 
@@ -12,6 +13,36 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
+
+  testWidgets(
+    "Home's nutrition count only includes today's meals, not yesterday's "
+    '(regression: `recent(days: 1)` is a rolling 24h window, not a '
+    'calendar day -- at 9am it reaches back into yesterday evening, so '
+    "yesterday's dinner was being counted as part of today's total)",
+    (tester) async {
+      final prefs = await SharedPreferences.getInstance();
+      final fixedNow = DateTime(2026, 1, 15, 9); // 9am -- inside the stale 24h window
+      final yesterdayEvening = DateTime(2026, 1, 14, 20);
+      final nutritionRepo = FakeNutritionRepository()
+        ..logged.addAll([
+          NutritionRecord(userId: 'u', loggedAt: yesterdayEvening, description: 'Dinner'),
+          NutritionRecord(userId: 'u', loggedAt: DateTime(2026, 1, 15, 8), description: 'Breakfast'),
+        ]);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: fullProviderSet(prefs: prefs, nutritionRepository: nutritionRepo),
+          child: MaterialApp(
+            home: Scaffold(body: HomeScreen(now: () => fixedNow)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 logged'), findsOneWidget);
+      expect(find.text('2 logged'), findsNothing);
+    },
+  );
 
   testWidgets('Home renders the Wellness Score from the summary repository',
       (tester) async {

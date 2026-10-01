@@ -95,6 +95,12 @@ class FakeAiRepository implements AiRepository {
   };
   AiChatFailure? failure;
 
+  /// When set, `chat()` throws [failure] this many times before finally
+  /// succeeding -- lets a test simulate a transient provider hiccup that
+  /// clears up on retry, without needing a real flaky network.
+  int chatFailuresBeforeSuccess = 0;
+  int chatCallCount = 0;
+
   /// Optional artificial delay so widget tests can observe the loading
   /// state between a `pump()` and `pumpAndSettle()`.
   Duration delay = Duration.zero;
@@ -102,7 +108,11 @@ class FakeAiRepository implements AiRepository {
   @override
   Future<Map<String, dynamic>> chat(Map<String, dynamic> requestBody) async {
     lastChatRequest = requestBody;
+    chatCallCount++;
     if (delay > Duration.zero) await Future<void>.delayed(delay);
+    if (chatCallCount <= chatFailuresBeforeSuccess) {
+      throw failure ?? const AiProviderFailure();
+    }
     if (failure != null) throw failure!;
     return chatResponse;
   }

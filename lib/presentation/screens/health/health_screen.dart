@@ -7,6 +7,7 @@ import '../../../domain/models/sleep_record.dart';
 import '../../../domain/models/water_record.dart';
 import '../../../domain/models/weight_record.dart';
 import '../../../domain/repositories/metric_repositories.dart';
+import '../../widgets/health_chart_section.dart';
 import '../../widgets/wellness_trend_section.dart';
 
 /// Metric logging/history across sleep, activity, water, weight, nutrition.
@@ -23,6 +24,8 @@ class HealthScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         const WellnessTrendSection(),
+        const SizedBox(height: 16),
+        const HealthChartSection(),
         const SizedBox(height: 16),
         _HistorySection<SleepRecord>(
           title: 'Sleep',

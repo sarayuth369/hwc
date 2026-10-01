@@ -38,20 +38,34 @@ class AppTheme {
 
   double get iconSize => 24;
 
-  Color get primary => const Color(0xFF0B5FFF);
+  // "Healthy" palette (replaces the earlier plain blue light theme) —
+  // designed from the evidence cited in HWC_DECISIONS.md: healthcare-
+  // interface research favoring calm color + minimal layout, EHR studies
+  // suggesting blue/green for normal states, and caregiver-interface
+  // research favoring green/purple, balanced against WCAG 2.2's 4.5:1 text
+  // contrast / 3:1 UI-graphic contrast minimums and its "never color
+  // alone" guidance (every semantic color pairs with a text label or icon
+  // elsewhere in the UI, never color as the sole signal). A calm teal
+  // reads as "health/growth" without the saturated, clinical green this
+  // explicitly avoids; every color below was verified against its actual
+  // background at implementation time (see HWC_DECISIONS.md for the
+  // computed ratios), not chosen by eye.
+  Color get primary => const Color(0xFF0B7A69);
   Color get onPrimary => Colors.white;
-  Color get background => const Color(0xFFF7F9FC);
-  Color get onBackground => const Color(0xFF131A2B);
+  Color get background => const Color(0xFFFAF8F3);
+  Color get onBackground => const Color(0xFF1F2A24);
   Color get surface => Colors.white;
   Color get onSurface => onBackground;
   Color get error => const Color(0xFFB3261E);
   Color get onError => Colors.white;
 
   // Semantic colors: wellness-score bands and status rows read off these,
-  // not raw hex values scattered across screens.
-  Color get success => const Color(0xFF1E8E5A);
+  // not raw hex values scattered across screens. Deliberately a different
+  // hue from `primary` (true green vs. primary's blue-green teal) so a
+  // success/good state never reads as "just the brand color."
+  Color get success => const Color(0xFF2E7D32);
   Color get onSuccess => Colors.white;
-  Color get warning => const Color(0xFFB26A00);
+  Color get warning => const Color(0xFF9C6B0A);
   Color get onWarning => Colors.white;
 
   Color get outline => onBackground.withValues(alpha: 0.15);
