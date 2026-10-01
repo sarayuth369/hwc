@@ -42,7 +42,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshUnreadCount());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshUnreadCount();
+      // `didChangeAppLifecycleState` only fires on a *transition* (e.g.
+      // backgrounded -> resumed) -- it never fires for the very first,
+      // cold-start build, so without this call the App Open ad would never
+      // show on a fresh launch, only on a later resume.
+      context.read<AdService>().maybeShowAppOpenAd();
+    });
   }
 
   @override
@@ -79,6 +86,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(_titles[_index])),
+      // Bottom only, not top-and-bottom at once: `AdMobAdService` loads one
+      // `BannerAd` instance, and the underlying native ad view can only be
+      // attached to a single `AdWidget` at a time -- two simultaneously
+      // mounted banners sharing it would fight over the same native view.
+      // `AdBannerPosition.top` is still a real, tested placement (see
+      // `ad_banner_bar.dart`) for any screen that wants a top banner
+      // *instead of* bottom, just never both on the same screen.
       body: Column(
         children: [
           Expanded(
@@ -96,7 +110,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               ],
             ),
           ),
-          if (_adEligibleTabIndexes.contains(_index)) const AdBannerBar(),
+          if (_adEligibleTabIndexes.contains(_index))
+            const AdBannerBar(position: AdBannerPosition.bottom),
         ],
       ),
       bottomNavigationBar: NavigationBar(

@@ -375,7 +375,7 @@ List<SingleChildWidget> fullProviderSet({
     Provider<BillingService>.value(
       value: billingService ?? FakeBillingService(),
     ),
-    Provider<AdService>.value(
+    ChangeNotifierProvider<AdService>.value(
       value: NullAdService(),
     ),
     Provider<MetricSyncTrigger>.value(

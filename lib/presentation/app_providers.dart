@@ -120,9 +120,12 @@ class AppProviders extends StatelessWidget {
         Provider<BillingService>(
           create: (_) => PlayBillingService(),
         ),
-        Provider<AdService>(
+        ChangeNotifierProvider<AdService>(
           create: (_) => AdMobAdService()..initialize(),
-          dispose: (_, __) {},
+          // Previously a no-op -- `AdMobAdService` held onto a live
+          // `BannerAd`/`AppOpenAd` with nothing ever disposing them.
+          // `ChangeNotifierProvider` calls `.dispose()` on the value
+          // itself automatically, which now actually disposes both.
         ),
       ],
       child: child,

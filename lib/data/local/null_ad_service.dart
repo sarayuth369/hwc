@@ -7,7 +7,7 @@ import '../../domain/ads/ad_service.dart';
 /// `google_mobile_ads` platform channel doesn't exist). Same pattern as
 /// `NullVoiceProvider`/`NullFamilyRepository` elsewhere in this app: never
 /// fakes an ad, just correctly reports there isn't one.
-class NullAdService implements AdService {
+class NullAdService with ChangeNotifier implements AdService {
   @override
   Future<void> initialize() async {}
 
