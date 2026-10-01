@@ -282,11 +282,11 @@ class _AiChatScreenState extends State<AiChatScreen> {
                 ),
               ),
               if (_messages.isNotEmpty)
-                TextButton.icon(
+                IconButton(
                   key: const Key('aiChatNewConversationButton'),
+                  tooltip: 'New conversation',
                   onPressed: () => _newConversation(context.read<ChatHistoryStore>()),
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('New conversation'),
+                  icon: const Icon(Icons.refresh, size: 20),
                 ),
             ],
           ),
@@ -438,10 +438,10 @@ class _MessageBubble extends StatelessWidget {
           isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
+            maxWidth: MediaQuery.of(context).size.width * 0.78,
           ),
           decoration: BoxDecoration(
             color: isUser

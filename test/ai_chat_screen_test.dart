@@ -164,6 +164,36 @@ void main() {
     expect(find.byKey(const Key('aiChatSpeakButton')), findsOneWidget);
   });
 
+  testWidgets(
+    'the chat stays stable (no overflow) with several messages and a '
+    'simulated on-screen keyboard open',
+    (tester) async {
+      final aiRepository = FakeAiRepository()
+        ..chatResponse = {'reply': 'A reasonably long reply about hydration and sleep.', 'conversationId': 'c1'};
+
+      await tester.pumpWidget(
+        await _wrap(userService: FakeCurrentUserService(), aiRepository: aiRepository),
+      );
+
+      for (var i = 0; i < 4; i++) {
+        await tester.enterText(find.byKey(const Key('aiChatInput')), 'Question $i');
+        await tester.tap(find.byKey(const Key('aiChatSendButton')));
+        await tester.pumpAndSettle();
+      }
+
+      // Simulate a software keyboard covering the bottom ~300px, the same
+      // way the real on-screen keyboard reports itself via viewInsets.
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      final view = tester.view;
+      view.viewInsets = const FakeViewPadding(bottom: 300 * 2.75); // device pixels
+      addTearDown(view.resetViewInsets);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('aiChatInput')), findsOneWidget);
+    },
+  );
+
   testWidgets('the mute toggle is present and flips the auto-speak preference',
       (tester) async {
     await tester.pumpWidget(
