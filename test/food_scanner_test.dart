@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:provider/provider.dart';
 
 import 'package:bkknex_health_app/data/local/sync_service.dart';
@@ -10,6 +11,7 @@ import 'package:bkknex_health_app/domain/repositories/metric_repositories.dart';
 import 'package:bkknex_health_app/domain/repositories/profile_repository.dart';
 import 'package:bkknex_health_app/presentation/screens/food_scanner/food_scanner_screen.dart';
 
+import 'support/fake_image_picker.dart';
 import 'support/fake_repositories.dart';
 
 Widget _wrap({
@@ -230,5 +232,131 @@ void main() {
     expect(nutritionRepository.logged, hasLength(1));
     expect(nutritionRepository.logged.single.description, 'Grilled chicken bowl');
     expect(find.byKey(const Key('foodScannerSaveMessage')), findsOneWidget);
+  });
+
+  group('real photo capture -> vision analysis', () {
+    late FakeImagePickerPlatform fakePicker;
+
+    setUp(() {
+      fakePicker = FakeImagePickerPlatform();
+      ImagePickerPlatform.instance = fakePicker;
+    });
+
+    testWidgets(
+        'picking a photo calls the real vision endpoint and auto-fills the '
+        'description field with its guess', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 1400));
+      final aiRepository = FakeAiRepository()
+        ..imageResponse = {
+          'description': 'A bowl of fried rice with a fried egg on top.',
+        };
+
+      await tester.pumpWidget(_wrap(
+        aiRepository: aiRepository,
+        nutritionRepository: FakeNutritionRepository(),
+      ));
+
+      await tester.tap(find.byKey(const Key('foodScannerGalleryButton')));
+      await tester.pumpAndSettle();
+
+      expect(fakePicker.pickCount, 1);
+      expect(aiRepository.lastImageRequest?['purpose'], 'food');
+      expect(
+        (tester.widget(find.byKey(const Key('foodScannerDescriptionField')))
+                as TextField)
+            .controller
+            ?.text,
+        'A bowl of fried rice with a fried egg on top.',
+      );
+    });
+
+    testWidgets(
+        'a vision provider failure shows a plain error without crashing, '
+        'and does not block manually describing the meal instead',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 1400));
+      final aiRepository = FakeAiRepository()..failure = const AiTimeoutFailure();
+
+      await tester.pumpWidget(_wrap(
+        aiRepository: aiRepository,
+        nutritionRepository: FakeNutritionRepository(),
+      ));
+
+      await tester.tap(find.byKey(const Key('foodScannerGalleryButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('foodScannerErrorMessage')), findsOneWidget);
+      expect(find.text('That took too long. Please try again.'), findsOneWidget);
+
+      // The vision failure must not leave the Estimate button permanently
+      // disabled -- the user can still type a description and estimate.
+      aiRepository.failure = null;
+      aiRepository.chatResponse = {
+        'reply': 'About 500 kcal.',
+        'conversationId': 'c1',
+      };
+      await tester.enterText(
+        find.byKey(const Key('foodScannerDescriptionField')),
+        'Fried rice',
+      );
+      await tester.tap(find.byKey(const Key('foodScannerEstimateButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('foodScannerEstimateText')), findsOneWidget);
+    });
+
+    testWidgets(
+        'a malformed vision response (no description field) leaves the '
+        'description field empty rather than fabricating text',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 1400));
+      final aiRepository = FakeAiRepository()
+        ..imageResponse = {'unexpected_field': 'nonsense'};
+
+      await tester.pumpWidget(_wrap(
+        aiRepository: aiRepository,
+        nutritionRepository: FakeNutritionRepository(),
+      ));
+
+      await tester.tap(find.byKey(const Key('foodScannerGalleryButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('foodScannerErrorMessage')), findsNothing);
+      expect(
+        (tester.widget(find.byKey(const Key('foodScannerDescriptionField')))
+                as TextField)
+            .controller
+            ?.text,
+        '',
+      );
+    });
+
+    testWidgets(
+        'the Estimate Nutrition button stays disabled while vision analysis '
+        'is still running (regression: tapping it before the AI guess '
+        'arrives used to show "Describe the meal first" even though a '
+        'valid guess landed a moment later)', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 1400));
+      final aiRepository = FakeAiRepository()..delay = const Duration(milliseconds: 50);
+
+      await tester.pumpWidget(_wrap(
+        aiRepository: aiRepository,
+        nutritionRepository: FakeNutritionRepository(),
+      ));
+
+      await tester.tap(find.byKey(const Key('foodScannerGalleryButton')));
+      await tester.pump();
+
+      final button = tester.widget<FilledButton>(
+        find.byKey(const Key('foodScannerEstimateButton')),
+      );
+      expect(button.onPressed, isNull);
+
+      await tester.pumpAndSettle();
+      final buttonAfter = tester.widget<FilledButton>(
+        find.byKey(const Key('foodScannerEstimateButton')),
+      );
+      expect(buttonAfter.onPressed, isNotNull);
+    });
   });
 }

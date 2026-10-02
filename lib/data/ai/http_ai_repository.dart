@@ -70,7 +70,7 @@ class HttpAiRepository implements AiRepository {
           )
           .timeout(timeout ?? _timeout);
     } on TimeoutException {
-      throw const AiNetworkFailure();
+      throw const AiTimeoutFailure();
     } on SocketException {
       throw const AiNetworkFailure();
     } on http.ClientException {
@@ -84,7 +84,24 @@ class HttpAiRepository implements AiRepository {
       throw AiNotImplementedFailure(_serverMessage(response) ?? 'This isn\'t available yet.');
     }
     if (response.statusCode >= 400) {
-      throw const AiProviderFailure();
+      // The Worker now returns a specific `code` for most failures (see
+      // `categorizeProviderError` in bkknex-worker's src/index.ts) instead
+      // of always collapsing to one generic message -- surface the real
+      // category and the server's own wording where available, rather than
+      // always showing "AI is unavailable right now".
+      final code = _serverErrorCode(response);
+      final message = _serverMessage(response);
+      switch (code) {
+        case 'invalid_request':
+        case 'invalid_context':
+          throw AiInvalidRequestFailure(message ?? const AiInvalidRequestFailure().message);
+        case 'provider_timeout':
+          throw AiTimeoutFailure(message ?? const AiTimeoutFailure().message);
+        case 'provider_rate_limited':
+          throw AiRateLimitedFailure(message ?? const AiRateLimitedFailure().message);
+        default:
+          throw AiProviderFailure(message ?? const AiProviderFailure().message);
+      }
     }
 
     return jsonDecode(response.body) as Map<String, dynamic>;
@@ -98,6 +115,18 @@ class HttpAiRepository implements AiRepository {
       }
     } catch (_) {
       // Fall through to null — use the caller's default message.
+    }
+    return null;
+  }
+
+  String? _serverErrorCode(http.Response response) {
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic> && decoded['code'] is String) {
+        return decoded['code'] as String;
+      }
+    } catch (_) {
+      // Fall through to null.
     }
     return null;
   }

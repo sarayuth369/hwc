@@ -19,11 +19,11 @@ import '../../../domain/repositories/profile_repository.dart';
 import '../../widgets/confirmation_dialog.dart';
 
 /// Food Scanner: real photo capture/pick, then **real** AI vision analysis
-/// (the Worker's `/api/ai/image/analyze` route, backed by Cloudflare
-/// Workers AI's `@cf/llava-hf/llava-1.5-7b-hf` model) auto-fills a
-/// description of what's in the photo, which is then sent through the
-/// existing `/api/ai/chat` endpoint for a nutrition estimate. The
-/// description is editable — the vision model's output is prose, not
+/// (the Worker's `/api/ai/image/analyze` route; the backing Workers AI
+/// vision model is a server-side implementation detail, not hardcoded here)
+/// auto-fills a description of what's in the photo, which is then sent
+/// through the existing `/api/ai/chat` endpoint for a nutrition estimate.
+/// The description is editable — the vision model's output is prose, not
 /// guaranteed-accurate structured data, so the user stays in control of
 /// what actually gets estimated and logged.
 class FoodScannerScreen extends StatefulWidget {
@@ -125,12 +125,19 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
       Map<String, dynamic> response;
       try {
         response = await aiRepository.chat(requestBody);
-      } on AiProviderFailure {
+      } on AiChatFailure catch (failure) {
         // Workers AI is a shared inference service with occasional
         // transient failures -- one silent retry before surfacing an
         // error avoids making the user manually retry for a hiccup that
         // clears up a second later (confirmed by direct testing against
         // the live Worker: the same request succeeds on a fresh attempt).
+        // Only for genuinely transient categories -- not auth (won't fix
+        // itself) and not invalid-request (retrying the same bad input
+        // just fails the same way again).
+        final transient = failure is AiProviderFailure ||
+            failure is AiTimeoutFailure ||
+            failure is AiRateLimitedFailure;
+        if (!transient) rethrow;
         response = await aiRepository.chat(requestBody);
       }
       if (!mounted) return;
@@ -300,14 +307,20 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
             const SizedBox(height: 12),
             FilledButton(
               key: const Key('foodScannerEstimateButton'),
-              onPressed: _isEstimating ? null : _estimateNutrition,
+              // Also disabled while vision analysis is still running --
+              // otherwise a tap that lands before `_descriptionController`
+              // is auto-filled sees "Describe the meal first" even though a
+              // valid AI guess arrives a moment later (the exact bug
+              // reported: "AI's guess exists, but Estimate Nutrition still
+              // says Describe the meal first").
+              onPressed: (_isEstimating || _isAnalyzingPhoto) ? null : _estimateNutrition,
               child: _isEstimating
                   ? const SizedBox(
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Estimate Nutrition'),
+                  : Text(_isAnalyzingPhoto ? 'Looking at photo...' : 'Estimate Nutrition'),
             ),
             if (_failure != null) ...[
               const SizedBox(height: 12),
@@ -328,7 +341,8 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
                   if (_failure is! AiAuthFailure)
                     TextButton(
                       key: const Key('foodScannerRetryButton'),
-                      onPressed: _isEstimating ? null : _estimateNutrition,
+                      onPressed:
+                          (_isEstimating || _isAnalyzingPhoto) ? null : _estimateNutrition,
                       child: const Text('Try again'),
                     ),
                 ],

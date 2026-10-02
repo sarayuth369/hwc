@@ -131,6 +131,7 @@ class FakeAiRepository implements AiRepository {
     Map<String, dynamic> requestBody,
   ) async {
     lastImageRequest = requestBody;
+    if (delay > Duration.zero) await Future<void>.delayed(delay);
     if (failure != null) throw failure!;
     return imageResponse;
   }
