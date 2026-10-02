@@ -111,8 +111,39 @@ void main() {
   });
 
   testWidgets(
-      'a persistent provider failure (both attempts fail) shows the error '
-      'with a working "Try again" button',
+      'two consecutive transient failures are also retried automatically '
+      '(3 attempts total) before giving up -- a single short blip does not '
+      'need to resolve on the very first retry', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1400));
+    final aiRepository = FakeAiRepository()
+      ..chatFailuresBeforeSuccess = 2
+      ..chatResponse = {
+        'reply': '{"dish": "Fried rice", "confidence": "medium", '
+            '"portion": "1 plate", "calories": 600, "protein_g": 18, '
+            '"carbs_g": 75, "fat_g": 20, "notes": "Estimate."}',
+        'conversationId': 'c1',
+      };
+
+    await tester.pumpWidget(_wrap(
+      aiRepository: aiRepository,
+      nutritionRepository: FakeNutritionRepository(),
+    ));
+
+    await tester.enterText(
+      find.byKey(const Key('foodScannerDescriptionField')),
+      'Fried rice',
+    );
+    await tester.tap(find.byKey(const Key('foodScannerEstimateButton')));
+    await tester.pumpAndSettle();
+
+    expect(aiRepository.chatCallCount, 3);
+    expect(find.byKey(const Key('foodScannerErrorMessage')), findsNothing);
+    expect(find.byKey(const Key('foodScannerStructuredEstimate')), findsOneWidget);
+  });
+
+  testWidgets(
+      'a persistent provider failure (every retry attempt fails) shows the '
+      'error with a working "Try again" button',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(390, 1400));
     final aiRepository = FakeAiRepository()..failure = const AiProviderFailure();
@@ -231,7 +262,45 @@ void main() {
 
     expect(nutritionRepository.logged, hasLength(1));
     expect(nutritionRepository.logged.single.description, 'Grilled chicken bowl');
+    expect(nutritionRepository.logged.single.calories, isNull);
     expect(find.byKey(const Key('foodScannerSaveMessage')), findsOneWidget);
+  });
+
+  testWidgets(
+      'Add to Today persists the estimated calories, not just the '
+      'description (regression: the structured estimate shown in the '
+      'confirmation dialog was computed and displayed, then silently '
+      'discarded instead of being saved)', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1400));
+    final nutritionRepository = FakeNutritionRepository();
+    final aiRepository = FakeAiRepository()
+      ..chatResponse = {
+        'reply': '{"dish": "Fried rice", "confidence": "medium", '
+            '"portion": "1 plate", "calories": 650, "protein_g": 20, '
+            '"carbs_g": 80, "fat_g": 22, "notes": "Estimate."}',
+        'conversationId': 'c1',
+      };
+
+    await tester.pumpWidget(_wrap(
+      aiRepository: aiRepository,
+      nutritionRepository: nutritionRepository,
+    ));
+
+    await tester.enterText(
+      find.byKey(const Key('foodScannerDescriptionField')),
+      'Fried rice',
+    );
+    await tester.tap(find.byKey(const Key('foodScannerEstimateButton')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('foodScannerStructuredEstimate')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('foodScannerAddToTodayButton')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm'));
+    await tester.pumpAndSettle();
+
+    expect(nutritionRepository.logged, hasLength(1));
+    expect(nutritionRepository.logged.single.calories, 650);
   });
 
   group('real photo capture -> vision analysis', () {

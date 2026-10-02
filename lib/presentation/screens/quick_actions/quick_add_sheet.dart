@@ -61,6 +61,12 @@ class QuickAddSheet extends StatefulWidget {
 class _QuickAddSheetState extends State<QuickAddSheet> {
   static const _analytics = AnalyticsService();
   String? _status;
+  // Guards against a double-tap (or a tap landing right as a save completes)
+  // opening two entry sheets / logging the same metric twice -- the entry
+  // sheets themselves block re-tapping the row they're stacked on top of,
+  // but the row becomes interactive again as soon as that sheet closes,
+  // while the repository write + sync is still in flight.
+  bool _busy = false;
 
   String? _requireUserId() {
     final userId = context.read<CurrentUserService>().currentUserId;
@@ -80,27 +86,33 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
   Future<void> _syncNow() => context.read<MetricSyncTrigger>().syncPending();
 
   Future<void> _logWater() async {
-    final amount = await showNumericEntrySheet(
-      context,
-      title: 'Water',
-      icon: Icons.water_drop_outlined,
-      unit: 'ml',
-      initial: 250,
-      min: 0,
-      max: 2000,
-      step: 50,
-      presets: const [200, 250, 300, 500],
-    );
-    if (amount == null || !mounted) return;
-    final userId = _requireUserId();
-    if (userId == null) return;
-    await context.read<WaterRepository>().logWater(
-          WaterRecord(userId: userId, loggedAt: DateTime.now(), amountMl: amount.round()),
-        );
-    await _syncNow();
-    unawaited(_analytics.capture(AnalyticsEvent.waterLogged));
-    if (!mounted) return;
-    setState(() => _status = 'Water · ${amount.round()} ml added');
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final amount = await showNumericEntrySheet(
+        context,
+        title: 'Water',
+        icon: Icons.water_drop_outlined,
+        unit: 'ml',
+        initial: 250,
+        min: 0,
+        max: 2000,
+        step: 50,
+        presets: const [200, 250, 300, 500],
+      );
+      if (amount == null || !mounted) return;
+      final userId = _requireUserId();
+      if (userId == null) return;
+      await context.read<WaterRepository>().logWater(
+            WaterRecord(userId: userId, loggedAt: DateTime.now(), amountMl: amount.round()),
+          );
+      await _syncNow();
+      unawaited(_analytics.capture(AnalyticsEvent.waterLogged));
+      if (!mounted) return;
+      setState(() => _status = 'Water · ${amount.round()} ml added');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _openFoodScanner() async {
@@ -114,71 +126,89 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
   }
 
   Future<void> _logWalk() async {
-    final minutes = await showNumericEntrySheet(
-      context,
-      title: 'Walking',
-      icon: Icons.directions_walk,
-      unit: 'min',
-      initial: 20,
-      min: 0,
-      max: 240,
-      step: 5,
-      presets: const [10, 20, 30, 60],
-    );
-    if (minutes == null || !mounted) return;
-    final userId = _requireUserId();
-    if (userId == null) return;
-    await context.read<ActivityRepository>().logActivity(
-          ActivityRecord(
-            userId: userId,
-            loggedAt: DateTime.now(),
-            activeMinutes: minutes.round(),
-            activityType: 'walking',
-          ),
-        );
-    await _syncNow();
-    if (!mounted) return;
-    setState(() => _status = 'Walking · ${minutes.round()} min added');
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final minutes = await showNumericEntrySheet(
+        context,
+        title: 'Walking',
+        icon: Icons.directions_walk,
+        unit: 'min',
+        initial: 20,
+        min: 0,
+        max: 240,
+        step: 5,
+        presets: const [10, 20, 30, 60],
+      );
+      if (minutes == null || !mounted) return;
+      final userId = _requireUserId();
+      if (userId == null) return;
+      await context.read<ActivityRepository>().logActivity(
+            ActivityRecord(
+              userId: userId,
+              loggedAt: DateTime.now(),
+              activeMinutes: minutes.round(),
+              activityType: 'walking',
+            ),
+          );
+      await _syncNow();
+      if (!mounted) return;
+      setState(() => _status = 'Walking · ${minutes.round()} min added');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _logWeight() async {
-    final weight = await showNumericEntrySheet(
-      context,
-      title: 'Weight',
-      icon: Icons.monitor_weight_outlined,
-      unit: 'kg',
-      initial: 70,
-      min: 20,
-      max: 250,
-      step: 0.5,
-      decimals: 1,
-    );
-    if (weight == null || !mounted) return;
-    final userId = _requireUserId();
-    if (userId == null) return;
-    await context.read<WeightRepository>().logWeight(
-          WeightRecord(userId: userId, loggedAt: DateTime.now(), weightKg: weight),
-        );
-    await _syncNow();
-    unawaited(_analytics.capture(AnalyticsEvent.weightLogged));
-    if (!mounted) return;
-    setState(() => _status = 'Weight · ${weight.toStringAsFixed(1)} kg added');
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final weight = await showNumericEntrySheet(
+        context,
+        title: 'Weight',
+        icon: Icons.monitor_weight_outlined,
+        unit: 'kg',
+        initial: 70,
+        min: 20,
+        max: 250,
+        step: 0.5,
+        decimals: 1,
+      );
+      if (weight == null || !mounted) return;
+      final userId = _requireUserId();
+      if (userId == null) return;
+      await context.read<WeightRepository>().logWeight(
+            WeightRecord(userId: userId, loggedAt: DateTime.now(), weightKg: weight),
+          );
+      await _syncNow();
+      unawaited(_analytics.capture(AnalyticsEvent.weightLogged));
+      if (!mounted) return;
+      setState(() => _status = 'Weight · ${weight.toStringAsFixed(1)} kg added');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _logSleep() async {
-    final hours = await showSleepEntrySheet(context, initialHours: 7.5);
-    if (hours == null || !mounted) return;
-    final userId = _requireUserId();
-    if (userId == null) return;
-    await context.read<SleepRepository>().logSleep(
-          SleepRecord(userId: userId, loggedAt: DateTime.now(), hoursSlept: hours),
-        );
-    await _syncNow();
-    if (!mounted) return;
-    final wholeHours = hours.floor();
-    final minutes = ((hours - wholeHours) * 60).round();
-    final label = minutes == 0 ? '${wholeHours}h' : '${wholeHours}h ${minutes}min';
-    setState(() => _status = 'Sleep · $label added');
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final hours = await showSleepEntrySheet(context, initialHours: 7.5);
+      if (hours == null || !mounted) return;
+      final userId = _requireUserId();
+      if (userId == null) return;
+      await context.read<SleepRepository>().logSleep(
+            SleepRecord(userId: userId, loggedAt: DateTime.now(), hoursSlept: hours),
+          );
+      await _syncNow();
+      if (!mounted) return;
+      final wholeHours = hours.floor();
+      final minutes = ((hours - wholeHours) * 60).round();
+      final label = minutes == 0 ? '${wholeHours}h' : '${wholeHours}h ${minutes}min';
+      setState(() => _status = 'Sleep · $label added');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _openMore() {
@@ -234,7 +264,7 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
                       icon: Icons.water_drop_outlined,
                       title: 'Water',
                       subtitle: 'Enter an amount',
-                      onTap: _logWater,
+                      onTap: _busy ? null : _logWater,
                       actionKey: const Key('quickAddWaterRow'),
                     ),
                     _QuickAddRow(
@@ -248,21 +278,21 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
                       icon: Icons.directions_walk,
                       title: 'Walking',
                       subtitle: 'Add activity',
-                      onTap: _logWalk,
+                      onTap: _busy ? null : _logWalk,
                       actionKey: const Key('quickAddWalkRow'),
                     ),
                     _QuickAddRow(
                       icon: Icons.monitor_weight_outlined,
                       title: 'Weight',
                       subtitle: 'Add weight',
-                      onTap: _logWeight,
+                      onTap: _busy ? null : _logWeight,
                       actionKey: const Key('quickAddWeightRow'),
                     ),
                     _QuickAddRow(
                       icon: Icons.bedtime_outlined,
                       title: 'Sleep',
                       subtitle: 'Add sleep',
-                      onTap: _logSleep,
+                      onTap: _busy ? null : _logSleep,
                       actionKey: const Key('quickAddSleepRow'),
                     ),
                     _QuickAddRow(
@@ -295,7 +325,10 @@ class _QuickAddRow extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  final VoidCallback onTap;
+  // Nullable: a null onTap (while a write is already in flight for another
+  // row) renders as ListTile's own built-in disabled state -- untappable
+  // and visibly dimmed, not just untappable with no visual signal.
+  final VoidCallback? onTap;
   final Key actionKey;
 
   @override
@@ -304,6 +337,10 @@ class _QuickAddRow extends StatelessWidget {
     return ListTile(
       key: actionKey,
       onTap: onTap,
+      // ListTile doesn't dim itself just because onTap is null -- enabled
+      // must be set explicitly for the row to actually look disabled while
+      // another Quick Add write is in flight, not just silently ignore taps.
+      enabled: onTap != null,
       leading: CircleAvatar(
         backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
         child: Icon(icon, color: theme.colorScheme.primary),

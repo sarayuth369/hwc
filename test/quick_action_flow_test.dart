@@ -14,6 +14,7 @@ Widget _wrap({
   required FakeWeightRepository weightRepo,
   required FakeSleepRepository sleepRepo,
   required FakeActivityRepository activityRepo,
+  MetricSyncTrigger? syncTrigger,
 }) {
   return MultiProvider(
     providers: [
@@ -23,7 +24,7 @@ Widget _wrap({
       Provider<ActivityRepository>.value(value: activityRepo),
       Provider<WeightRepository>.value(value: weightRepo),
       Provider<SleepRepository>.value(value: sleepRepo),
-      Provider<MetricSyncTrigger>.value(value: FakeSyncTrigger()),
+      Provider<MetricSyncTrigger>.value(value: syncTrigger ?? FakeSyncTrigger()),
     ],
     child: MaterialApp(
       home: Scaffold(
@@ -131,4 +132,53 @@ void main() {
     expect(sleepRepo.logged, hasLength(1));
     expect(sleepRepo.logged.single.hoursSlept, closeTo(7.5 + 5 / 60, 0.001));
   });
+
+  testWidgets(
+    'rows disable while a write is still syncing, and a tap during that '
+    'window does not log a second record (regression: the row became '
+    'tappable again the instant the entry sheet closed, while the '
+    'repository write + sync was still in flight)',
+    (tester) async {
+      final waterRepo = FakeWaterRepository();
+      final syncTrigger = FakeSyncTrigger()..delay = const Duration(milliseconds: 200);
+
+      await tester.pumpWidget(_wrap(
+        waterRepo: waterRepo,
+        weightRepo: FakeWeightRepository(),
+        sleepRepo: FakeSleepRepository(),
+        activityRepo: FakeActivityRepository(),
+        syncTrigger: syncTrigger,
+      ));
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quickAddWaterRow')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quickEntrySaveButton')));
+
+      // The entry sheet has closed and the write+sync is now in flight
+      // (still "syncing" for another ~200ms) -- the row must already be
+      // disabled at this point, before the first write even settles.
+      await tester.pump();
+      final rowDuringSync =
+          tester.widget<ListTile>(find.byKey(const Key('quickAddWaterRow')));
+      expect(rowDuringSync.enabled, isFalse);
+
+      // A tap on a disabled ListTile is a no-op, but assert on the
+      // underlying state directly too: logging a second record during this
+      // window would prove the guard isn't actually blocking the action.
+      await tester.tap(find.byKey(const Key('quickAddWaterRow')));
+      await tester.pump();
+      expect(waterRepo.logged, hasLength(1));
+      expect(syncTrigger.callCount, 1);
+
+      await tester.pumpAndSettle();
+
+      // Once the first write/sync fully settles, the row is tappable again.
+      final rowAfterSync =
+          tester.widget<ListTile>(find.byKey(const Key('quickAddWaterRow')));
+      expect(rowAfterSync.enabled, isTrue);
+      expect(waterRepo.logged, hasLength(1));
+    },
+  );
 }

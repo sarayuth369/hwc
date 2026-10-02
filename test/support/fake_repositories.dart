@@ -247,9 +247,15 @@ class FakePremiumSubscriptionRepository implements SubscriptionRepository {
 class FakeSyncTrigger implements MetricSyncTrigger {
   int callCount = 0;
 
+  /// Lets a test observe the in-flight state between a write starting and
+  /// `syncPending()` resolving (e.g. to verify a row disables itself while
+  /// busy), without needing a real timer-based `SyncService`.
+  Duration delay = Duration.zero;
+
   @override
   Future<void> syncPending() async {
     callCount++;
+    if (delay > Duration.zero) await Future<void>.delayed(delay);
   }
 }
 

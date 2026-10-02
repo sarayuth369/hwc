@@ -122,23 +122,36 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
             'in "confidence" and "notes" rather than overstating precision.',
         'healthContext': healthContext,
       };
-      Map<String, dynamic> response;
-      try {
-        response = await aiRepository.chat(requestBody);
-      } on AiChatFailure catch (failure) {
-        // Workers AI is a shared inference service with occasional
-        // transient failures -- one silent retry before surfacing an
-        // error avoids making the user manually retry for a hiccup that
-        // clears up a second later (confirmed by direct testing against
-        // the live Worker: the same request succeeds on a fresh attempt).
-        // Only for genuinely transient categories -- not auth (won't fix
-        // itself) and not invalid-request (retrying the same bad input
-        // just fails the same way again).
-        final transient = failure is AiProviderFailure ||
-            failure is AiTimeoutFailure ||
-            failure is AiRateLimitedFailure;
-        if (!transient) rethrow;
-        response = await aiRepository.chat(requestBody);
+      Map<String, dynamic>? response;
+      // Workers AI is a shared inference service with occasional transient
+      // failures -- up to 2 silent retries (3 attempts total) before
+      // surfacing an error avoids making the user manually retry for a
+      // hiccup that clears up a moment later (confirmed by direct testing
+      // against the live Worker: the exact same request succeeds on a
+      // fresh attempt). Only for genuinely transient categories -- not
+      // auth (won't fix itself) and not invalid-request (retrying the same
+      // bad input just fails the same way again).
+      const maxAttempts = 3;
+      AiChatFailure? lastFailure;
+      response = null;
+      for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          response = await aiRepository.chat(requestBody);
+          break;
+        } on AiChatFailure catch (failure) {
+          final transient = failure is AiProviderFailure ||
+              failure is AiTimeoutFailure ||
+              failure is AiRateLimitedFailure;
+          if (!transient || attempt == maxAttempts) rethrow;
+          lastFailure = failure;
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        }
+      }
+      if (response == null) {
+        // Unreachable in practice (the loop either returns a response or
+        // rethrows), but keeps the analyzer happy about non-null usage
+        // below without a `!`.
+        throw lastFailure ?? const AiProviderFailure();
       }
       if (!mounted) return;
       final reply = response['reply'] as String? ?? '';
@@ -195,6 +208,11 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
             loggedAt: DateTime.now(),
             mealType: inferMealTypeFromTime(),
             description: description.isEmpty ? 'Scanned meal' : description,
+            // Was discarded entirely -- the user sees this exact number in
+            // the confirmation dialog above, then it never reached the
+            // database. Null (not a fabricated 0) when no structured
+            // estimate exists, matching "never fabricate nutrition numbers".
+            calories: structured?.calories.round(),
           ),
         );
     if (!mounted) return;
@@ -290,6 +308,18 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
             TextField(
               key: const Key('foodScannerDescriptionField'),
               controller: _descriptionController,
+              // Was single-line (the default) -- the vision model's real
+              // replies run several sentences, and a single-line field only
+              // shows whatever's scrolled into view around the cursor (which
+              // `_descriptionController.text = description` places at the
+              // END of the text), so the user only ever saw an unreadable
+              // tail fragment of the real description, never the start.
+              // Confirmed live: a real vision call returned "...featuring a
+              // fried egg, rice, and chicken drumsticks. The visible
+              // ingredients include: ..." in full, while the single-line
+              // field only displayed ". The visible ingredients include:".
+              minLines: 2,
+              maxLines: 5,
               decoration: const InputDecoration(
                 labelText: "AI's guess — edit if it's wrong",
                 hintText: 'e.g. Grilled chicken bowl',

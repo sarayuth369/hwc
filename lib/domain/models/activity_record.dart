@@ -18,7 +18,9 @@ class ActivityRecord {
   Map<String, dynamic> toJson() => {
         if (id != null) 'id': id,
         'user_id': userId,
-        'logged_at': loggedAt.toIso8601String(),
+        // .toUtc() required -- see WaterRecord.toJson()'s comment for why a
+        // local DateTime's ISO string silently gets misread as UTC.
+        'logged_at': loggedAt.toUtc().toIso8601String(),
         if (steps != null) 'steps': steps,
         if (activeMinutes != null) 'active_minutes': activeMinutes,
         if (activityType != null) 'activity_type': activityType,
