@@ -52,3 +52,19 @@ if [ -f "$PROPERTIES_FILE" ] && ! grep -q "kotlin.incremental" "$PROPERTIES_FILE
   echo "kotlin.incremental=false" >> "$PROPERTIES_FILE"
   echo "Disabled Kotlin incremental compilation in $PROPERTIES_FILE"
 fi
+
+# Disable R8 minification for release builds -- confirmed via a real device
+# crash (adb logcat, 2026-10-02) that the stock `flutter create` release
+# build type runs R8 with zero custom keep rules (no proguard-rules.pro has
+# ever existed in this project), which stripped something `androidx.work`'s
+# auto-initializing Room database needs via reflection and crashed the app
+# on launch before any Dart code runs -- see HWC_REPORT.md's crash-fix
+# entry for the full stack trace. This app also has no production signing
+# config yet (still signs release with debug keys), so minification was
+# never a deliberate, hardened choice to begin with.
+if grep -q "isMinifyEnabled = false" "$GRADLE_FILE"; then
+  echo "R8 minification already disabled for release -- nothing to do."
+else
+  sed -i '/signingConfig = signingConfigs.getByName("debug")/a\            isMinifyEnabled = false\n            isShrinkResources = false' "$GRADLE_FILE"
+  echo "Disabled R8 minification/resource shrinking for release in $GRADLE_FILE"
+fi

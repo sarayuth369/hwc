@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:cross_file/cross_file.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 
 /// Content doesn't matter -- every AI call in these tests is itself faked --

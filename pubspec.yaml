@@ -32,6 +32,13 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^4.0.0
   flutter_launcher_icons: ^0.14.4
+  # Test-only: test/support/fake_image_picker.dart swaps
+  # ImagePickerPlatform.instance for a fake so widget tests can exercise
+  # the real photo -> analyzeImage() flow. Already resolved transitively
+  # via image_picker; declared directly here only to satisfy the analyzer
+  # (depend_on_referenced_packages) -- no version change.
+  image_picker_platform_interface: any
+  cross_file: any
 
 flutter:
   uses-material-design: true
