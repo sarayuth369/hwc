@@ -190,7 +190,9 @@ class _FoodScannerScreenState extends State<FoodScannerScreen> {
             '${structured.carbsG.round()}g carbs · '
             '${structured.fatG.round()}g fat '
             '(${structured.confidence} confidence)'
-        : (_estimate != null ? '\n\n$_estimate' : '');
+        : (_estimate != null
+            ? '\n\n$_estimate'
+            : '\n\nNo nutrition estimate yet — only the food name will be saved, with no calories or macros.');
     final confirmed = await showConfirmationDialog(
       context,
       title: 'Add this to today?',
