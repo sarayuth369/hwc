@@ -36,23 +36,42 @@ class _AdBannerBarState extends State<AdBannerBar> {
   @override
   Widget build(BuildContext context) {
     final adService = context.watch<AdService>();
+    final widthDp = MediaQuery.sizeOf(context).width.truncate();
     return FutureBuilder<SubscriptionTier>(
       future: _tierFuture,
       builder: (context, snapshot) {
-        if (snapshot.data == SubscriptionTier.premium) return const SizedBox.shrink();
+        final isPremium = snapshot.data == SubscriptionTier.premium;
+        if (isPremium) return const SizedBox.shrink();
+        // Premium users never trigger an ad request. For everyone else,
+        // ask for a banner sized to this exact screen width (idempotent --
+        // a no-op once one is loaded/loading, or ads aren't allowed). Done
+        // after the frame so it never mutates state mid-build.
+        if (snapshot.hasData) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) adService.prepareBanner(widthDp);
+          });
+        }
         final ad = adService.bannerAdWidget();
-        if (ad == null) return const SizedBox.shrink();
-        // SafeArea on only the edge this bar actually touches -- a top bar
-        // never needs to reserve the bottom system-nav inset and vice
-        // versa, matching the MKR pattern this was ported from.
-        return SafeArea(
-          top: widget.position == AdBannerPosition.top,
-          bottom: widget.position == AdBannerPosition.bottom,
-          child: Container(
-            alignment: Alignment.center,
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: ad,
-          ),
+        // AnimatedSize: the bar grows in smoothly once the ad loads instead
+        // of snapping the content above it upward; while there is no ad it
+        // is exactly zero-height (no placeholder gap).
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          alignment: Alignment.bottomCenter,
+          child: ad == null
+              ? const SizedBox(width: double.infinity)
+              : SafeArea(
+                  // SafeArea on only the edge this bar actually touches --
+                  // a top bar never needs the bottom system-nav inset and
+                  // vice versa.
+                  top: widget.position == AdBannerPosition.top,
+                  bottom: widget.position == AdBannerPosition.bottom,
+                  child: Container(
+                    alignment: Alignment.center,
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    child: ad,
+                  ),
+                ),
         );
       },
     );

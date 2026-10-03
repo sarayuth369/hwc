@@ -332,6 +332,7 @@ List<SingleChildWidget> fullProviderSet({
   FakeNotificationRepository? notificationRepository,
   FakeBillingService? billingService,
   SubscriptionRepository? subscriptionRepository,
+  AdService? adService,
 }) {
   return [
     Provider<CurrentUserService>.value(
@@ -383,7 +384,7 @@ List<SingleChildWidget> fullProviderSet({
       value: billingService ?? FakeBillingService(),
     ),
     ChangeNotifierProvider<AdService>.value(
-      value: NullAdService(),
+      value: adService ?? NullAdService(),
     ),
     Provider<MetricSyncTrigger>.value(
       value: FakeSyncTrigger(),

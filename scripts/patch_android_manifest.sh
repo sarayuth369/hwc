@@ -52,21 +52,28 @@ if ! grep -q "android:label=\"$APP_LABEL\"" "$MANIFEST"; then
   changed=1
 fi
 
+# HWC's production AdMob App ID (an identifier, not a credential -- it ships
+# in every APK). google_mobile_ads crashes at MobileAds.instance.initialize()
+# without this meta-data, so it is not optional. It is the same in every
+# build type on purpose: Google recommends testing with the *production App
+# ID + Google's test ad UNIT IDs*, and lib/core/ads/ad_unit_ids.dart
+# selects test units for debug/profile and production units for release by
+# build mode, so debug builds can never serve or click production ads.
+ADMOB_APP_ID="ca-app-pub-1918372113970166~1511164770"
+
 if ! grep -q 'com.google.android.gms.ads.APPLICATION_ID' "$MANIFEST"; then
-  # google_mobile_ads crashes at MobileAds.instance.initialize() without
-  # this meta-data present -- it is not optional, unlike most of this
-  # script's other patches. Google's own published test App ID (safe to
-  # commit -- it's meant to be public, always serves a labeled test ad,
-  # never real inventory). Swap to a real AdMob App ID via this same
-  # script once M creates one, never by hand-editing the gitignored
-  # generated manifest.
-  ADMOB_APP_ID="ca-app-pub-3940256099942544~3347511713"
   # Inserted after the line that closes the multi-line <application ...>
   # opening tag (android:icon=...">), not after the bare "<application"
   # substring -- that would land the meta-data inside the tag's own
   # attribute list, which is invalid XML.
   sed -i "/android:icon=\"@mipmap\/ic_launcher\">/a\\
         <meta-data android:name=\"com.google.android.gms.ads.APPLICATION_ID\" android:value=\"$ADMOB_APP_ID\"/>" "$MANIFEST"
+  changed=1
+elif ! grep -q "android:value=\"$ADMOB_APP_ID\"" "$MANIFEST"; then
+  # Already present with a different value (e.g. the old Google test App
+  # ID from before production IDs existed) -- replace it in place. Skipping
+  # here is how a stale test ID would survive in a long-lived local android/.
+  sed -i "s|\(com.google.android.gms.ads.APPLICATION_ID\" android:value=\"\)[^\"]*\"|\1$ADMOB_APP_ID\"|" "$MANIFEST"
   changed=1
 fi
 

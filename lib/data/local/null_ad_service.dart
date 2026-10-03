@@ -12,6 +12,15 @@ class NullAdService with ChangeNotifier implements AdService {
   Future<void> initialize() async {}
 
   @override
+  Future<void> prepareBanner(int widthDp) async {}
+
+  @override
+  Future<bool> isPrivacyOptionsRequired() async => false;
+
+  @override
+  Future<void> showPrivacyOptions() async {}
+
+  @override
   Widget? bannerAdWidget() => null;
 
   @override

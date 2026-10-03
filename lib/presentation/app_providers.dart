@@ -121,11 +121,14 @@ class AppProviders extends StatelessWidget {
           create: (_) => PlayBillingService(),
         ),
         ChangeNotifierProvider<AdService>(
+          // lazy: false so Google's consent (UMP) flow runs at app launch,
+          // as Google requires, rather than whenever a screen first reads the
+          // service. `initialize()` is fire-and-forget and catches every
+          // error: the app never waits on, or fails because of, ads.
+          lazy: false,
           create: (_) => AdMobAdService()..initialize(),
-          // Previously a no-op -- `AdMobAdService` held onto a live
-          // `BannerAd`/`AppOpenAd` with nothing ever disposing them.
-          // `ChangeNotifierProvider` calls `.dispose()` on the value
-          // itself automatically, which now actually disposes both.
+          // `ChangeNotifierProvider` disposes the value automatically,
+          // which disposes the banner and any loaded App Open ad.
         ),
       ],
       child: child,

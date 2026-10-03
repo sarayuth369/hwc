@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/config/legal_links.dart';
 import '../../../core/theme/app_theme_mode_controller.dart';
 import '../../../data/local/notification_service.dart';
+import '../../../domain/ads/ad_service.dart';
 import '../../../domain/models/auth_failure.dart';
 import '../../../domain/repositories/auth_repository.dart';
 import '../../widgets/senior_mode_toggle.dart';
@@ -24,6 +25,11 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  // Whether Google requires an in-app privacy-choices entry point for this
+  // user (UMP) -- resolved once; the tile below only exists when true.
+  late final Future<bool> _privacyOptionsRequired =
+      context.read<AdService>().isPrivacyOptionsRequired();
+
   Future<void> _openLink(String url) async {
     final uri = Uri.parse(url);
     await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -231,6 +237,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   trailing: const Icon(Icons.open_in_new, size: 18),
                   onTap: () => _openLink(LegalLinks.privacy),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  key: const Key('adsDisclosureTile'),
+                  leading: const Icon(Icons.ads_click_outlined),
+                  title: const Text('Advertising'),
+                  subtitle: const Text(
+                    'Free accounts may see ads provided by Google (Google Mobile '
+                    'Ads). Google may use your device\'s advertising ID and '
+                    'related data, according to your choices and applicable '
+                    'law. Ads are never health advice. HWC Premium has no ads.',
+                  ),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => _openLink(LegalLinks.privacy),
+                ),
+                FutureBuilder<bool>(
+                  future: _privacyOptionsRequired,
+                  builder: (context, snapshot) {
+                    if (snapshot.data != true) return const SizedBox.shrink();
+                    return Column(
+                      children: [
+                        const Divider(height: 1),
+                        ListTile(
+                          key: const Key('adPrivacyChoicesTile'),
+                          leading: const Icon(Icons.tune_outlined),
+                          title: const Text('Ad privacy choices'),
+                          subtitle: const Text(
+                            'Review or change your consent for personalized ads.',
+                          ),
+                          onTap: () => context.read<AdService>().showPrivacyOptions(),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const Divider(height: 1),
                 ListTile(

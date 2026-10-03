@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/ads/app_open_gate.dart';
 import '../../../domain/ads/ad_service.dart';
 import '../../../domain/repositories/notification_repository.dart';
+import '../../../domain/repositories/subscription_repository.dart';
 import '../../widgets/ad_banner_bar.dart';
 import '../ai_chat/ai_chat_screen.dart';
 import '../health/health_screen.dart';
@@ -46,9 +48,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       _refreshUnreadCount();
       // `didChangeAppLifecycleState` only fires on a *transition* (e.g.
       // backgrounded -> resumed) -- it never fires for the very first,
-      // cold-start build, so without this call the App Open ad would never
-      // show on a fresh launch, only on a later resume.
-      context.read<AdService>().maybeShowAppOpenAd();
+      // cold-start build, so cold start needs its own call. It only shows
+      // if an ad happens to be loaded already; it never waits for one.
+      _tryShowAppOpenAd(isColdStart: true);
     });
   }
 
@@ -60,9 +62,38 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      context.read<AdService>().maybeShowAppOpenAd();
+    if (state == AppLifecycleState.paused) {
+      _pausedAt = DateTime.now();
+    } else if (state == AppLifecycleState.resumed) {
+      final pausedAt = _pausedAt;
+      _pausedAt = null;
+      // A resume with no preceding pause (e.g. returning from a system
+      // dialog that only made the app `inactive`) is not "coming back to
+      // the app" -- no ad.
+      if (pausedAt != null) {
+        _tryShowAppOpenAd(isColdStart: false, awayFor: DateTime.now().difference(pausedAt));
+      }
     }
+  }
+
+  DateTime? _pausedAt;
+
+  /// Asks the ad service to show an App Open ad, but only at a moment
+  /// [AppOpenGate] says it is safe to interrupt the user. The service itself
+  /// still enforces loaded/unexpired/cooldown; this is the "is the user mid
+  /// -task" half of the decision.
+  Future<void> _tryShowAppOpenAd({required bool isColdStart, Duration? awayFor}) async {
+    final adService = context.read<AdService>();
+    final tier = await context.read<SubscriptionRepository>().currentTier();
+    if (!mounted) return;
+    final allowed = AppOpenGate.allows(
+      isPremium: tier == SubscriptionTier.premium,
+      isShellForegroundRoute: ModalRoute.of(context)?.isCurrent ?? false,
+      tabIndex: _index,
+      isColdStart: isColdStart,
+      awayFor: awayFor,
+    );
+    if (allowed) await adService.maybeShowAppOpenAd();
   }
 
   Future<void> _refreshUnreadCount() async {
