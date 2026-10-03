@@ -97,8 +97,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshUnreadCount() async {
-    final count = await context.read<NotificationRepository>().unreadCount();
-    if (mounted) setState(() => _unreadCount = count);
+    try {
+      final count = await context.read<NotificationRepository>().unreadCount();
+      if (mounted) setState(() => _unreadCount = count);
+    } catch (_) {
+      // The badge is cosmetic: if notifications can't be read (offline, or
+      // the backend table isn't provisioned yet) show no badge instead of
+      // letting an unhandled exception escape at startup.
+    }
   }
 
   void _select(int i) {
