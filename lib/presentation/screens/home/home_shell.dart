@@ -8,7 +8,7 @@ import '../../../core/push/push_payload.dart';
 import '../../../domain/ads/ad_service.dart';
 import '../../../domain/push/push_ports.dart';
 import '../../../domain/repositories/notification_repository.dart';
-import '../../../domain/repositories/subscription_repository.dart';
+import '../../../domain/billing/premium_controller.dart';
 import '../../widgets/ad_banner_bar.dart';
 import '../ai_chat/ai_chat_screen.dart';
 import '../health/health_screen.dart';
@@ -49,11 +49,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   static const _titles = ['Home', 'Health', 'AI Talk', 'Notifications', 'Profile'];
 
+  late final PremiumController _premium;
+
   @override
   void initState() {
     super.initState();
+    _premium = context.read<PremiumController>();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Load the server-backed entitlement and start listening to Play
+      // purchase updates for as long as a user is signed in.
+      unawaited(_premium.start());
       _refreshUnreadCount();
       // `didChangeAppLifecycleState` only fires on a *transition* (e.g.
       // backgrounded -> resumed) -- it never fires for the very first,
@@ -95,6 +101,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     _routeSub?.cancel();
     _inboxSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    // Signed out / shell torn down: forget this user's Premium state so the
+    // next account never inherits it. Deferred: stop() notifies listeners,
+    // which is not allowed while the widget tree is being torn down.
+    final premium = _premium;
+    scheduleMicrotask(premium.stop);
     super.dispose();
   }
 
@@ -106,6 +117,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       // Cheap + idempotent: picks up a permission the user granted in system
       // settings, and retries a registration that failed while offline.
       unawaited(context.read<PushService>().onSignedIn());
+      // Pick up a renewal / expiry / refund that happened while backgrounded.
+      unawaited(_premium.refreshEntitlement());
       final pausedAt = _pausedAt;
       _pausedAt = null;
       // A resume with no preceding pause (e.g. returning from a system
@@ -125,10 +138,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   /// -task" half of the decision.
   Future<void> _tryShowAppOpenAd({required bool isColdStart, Duration? awayFor}) async {
     final adService = context.read<AdService>();
-    final tier = await context.read<SubscriptionRepository>().currentTier();
-    if (!mounted) return;
+    final premium = _premium;
+    // Wait (bounded) for the entitlement read, and never show an ad until it
+    // is known: a Premium user must not get one just because the read was
+    // slow.
+    await premium.ready.timeout(const Duration(seconds: 5), onTimeout: () {});
+    if (!mounted || !premium.entitlementLoaded) return;
     final allowed = AppOpenGate.allows(
-      isPremium: tier == SubscriptionTier.premium,
+      isPremium: premium.isPremium,
       isShellForegroundRoute: ModalRoute.of(context)?.isCurrent ?? false,
       tabIndex: _index,
       isColdStart: isColdStart,

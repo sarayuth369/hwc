@@ -9,7 +9,7 @@ import '../data/ai/http_ai_repository.dart';
 import '../data/ads/admob_ad_service.dart';
 import '../data/billing/play_billing_service.dart';
 import '../data/local/chat_history_store.dart';
-import '../data/local/free_tier_subscription_repository.dart';
+import '../data/billing/http_entitlement_verifier.dart';
 import '../data/local/metric_write_queue.dart';
 import '../data/local/notification_service.dart';
 import '../data/local/null_family_repository.dart';
@@ -29,6 +29,9 @@ import '../data/supabase/supabase_client_provider.dart';
 import '../domain/ads/ad_service.dart';
 import '../domain/push/push_ports.dart';
 import '../domain/billing/billing_service.dart';
+import '../domain/billing/entitlement_verifier.dart';
+import '../domain/billing/premium_controller.dart';
+import '../data/supabase/subscription_repository_impl.dart';
 import '../domain/repositories/ai_repository.dart';
 import '../domain/repositories/auth_repository.dart';
 import '../domain/repositories/current_user_service.dart';
@@ -79,7 +82,7 @@ class AppProviders extends StatelessWidget {
           create: (_) => NotificationService(prefs),
         ),
         Provider<SubscriptionRepository>(
-          create: (_) => FreeTierSubscriptionRepository(),
+          create: (_) => SupabaseSubscriptionRepository(client, prefs),
         ),
         Provider<FamilyRepository>(
           create: (_) => NullFamilyRepository(),
@@ -139,7 +142,27 @@ class AppProviders extends StatelessWidget {
           dispose: (_, service) => service.dispose(),
         ),
         Provider<BillingService>(
+          // lazy: false so the Play purchase listener is attached at launch
+          // (the plugin's stream doesn't buffer): no purchase update, e.g. a
+          // pending payment completing while the app was closed, is missed.
+          lazy: false,
           create: (_) => PlayBillingService(),
+          dispose: (_, service) => (service as PlayBillingService).dispose(),
+        ),
+        Provider<EntitlementVerifier>(
+          create: (_) => HttpEntitlementVerifier(
+            currentUserService: currentUserService,
+          ),
+        ),
+        // The single authoritative Premium state (see PremiumController).
+        // Started/stopped by HomeShell while a user is signed in.
+        ChangeNotifierProvider<PremiumController>(
+          create: (context) => PremiumController(
+            billing: context.read<BillingService>(),
+            subscriptions: context.read<SubscriptionRepository>(),
+            verifier: context.read<EntitlementVerifier>(),
+            currentUser: currentUserService,
+          ),
         ),
         ChangeNotifierProvider<AdService>(
           // lazy: false so Google's consent (UMP) flow runs at app launch,

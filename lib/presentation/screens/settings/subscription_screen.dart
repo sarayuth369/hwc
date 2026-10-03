@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/config/legal_links.dart';
 import '../../../domain/billing/billing_product.dart';
 import '../../../domain/billing/billing_service.dart';
-import '../../../domain/repositories/subscription_repository.dart';
+import '../../../domain/billing/premium_controller.dart';
+
+/// Opens Google Play's subscription management page for HWC Premium.
+const _manageSubscriptionUrl =
+    'https://play.google.com/store/account/subscriptions'
+    '?sku=${HwcSubscription.productId}&package=com.bkknex.bkknex_health_app';
 
 const _premiumFeatures = [
   (Icons.psychology_outlined, 'AI Health Coach', 'Deeper, personalized guidance'),
@@ -14,11 +21,10 @@ const _premiumFeatures = [
   (Icons.block_flipped, 'No ads', 'A clean, uninterrupted experience'),
 ];
 
-/// Real paywall UI wired to the real `BillingService` (Google Play
-/// Billing). No product is configured in Play Console yet, so purchasing
-/// honestly reports that instead of faking a successful charge — see
-/// `PlayBillingService`'s own doc comment for exactly what's real vs.
-/// pending on M's side.
+/// Paywall wired to the real Google Play subscription (`hwc_premium`:
+/// `monthly` / `yearly` base plans) through [PremiumController]. Prices come
+/// from Google Play, the active state comes from the server-verified
+/// entitlement, and nothing here ever marks a user Premium by itself.
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
 
@@ -28,80 +34,74 @@ class SubscriptionScreen extends StatefulWidget {
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
   BillingPeriod _selected = BillingPeriod.yearly;
-  List<BillingProduct> _products = [];
-  bool _loadingProducts = true;
-  bool _purchasing = false;
-  bool _restoring = false;
-  String? _message;
-  SubscriptionTier _tier = SubscriptionTier.free;
+  late final PremiumController _premium;
 
   @override
   void initState() {
     super.initState();
-    _loadEntitlement();
-    _loadProducts();
-  }
-
-  Future<void> _loadEntitlement() async {
-    final tier = await context.read<SubscriptionRepository>().currentTier();
-    if (mounted) setState(() => _tier = tier);
-  }
-
-  Future<void> _loadProducts() async {
-    final products = await context.read<BillingService>().queryProducts();
-    if (mounted) {
-      setState(() {
-        _products = products;
-        _loadingProducts = false;
-      });
-    }
-  }
-
-  BillingProduct? _productFor(BillingPeriod period) =>
-      _products.where((p) => p.period == period).firstOrNull;
-
-  Future<void> _purchase() async {
-    final product = _productFor(_selected);
-    if (product == null) return;
-    setState(() {
-      _purchasing = true;
-      _message = null;
+    _premium = context.read<PremiumController>();
+    // Re-query products, the server entitlement and existing purchases every
+    // time the screen opens.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _premium.onPremiumScreenOpened();
     });
-    final outcome = await context.read<BillingService>().purchase(product);
-    if (!mounted) return;
-    setState(() {
-      _purchasing = false;
-      _message = switch (outcome) {
-        PurchaseOutcome.success => 'Thank you! Premium is now active.',
-        PurchaseOutcome.cancelled => 'Purchase cancelled.',
-        PurchaseOutcome.pending => 'Purchase pending — this can take a moment.',
-        PurchaseOutcome.notConfigured =>
-          'This plan isn\'t available for purchase yet.',
-        PurchaseOutcome.error => 'Something went wrong. Please try again.',
+  }
+
+  @override
+  void dispose() {
+    // Don't carry a stale message into the next visit.
+    final premium = _premium;
+    Future.microtask(premium.clearNotice);
+    super.dispose();
+  }
+
+  Future<void> _openUrl(String url) async {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  static String? _noticeText(PremiumNotice notice) => switch (notice) {
+        PremiumNotice.none => null,
+        PremiumNotice.success => 'Thank you! HWC Premium is now active.',
+        PremiumNotice.cancelled => 'Purchase cancelled. You have not been charged.',
+        PremiumNotice.pending =>
+          'Your payment is pending. Premium turns on automatically once Google Play confirms it.',
+        PremiumNotice.billingUnavailable =>
+          "Google Play Billing isn't available on this device right now.",
+        PremiumNotice.productUnavailable =>
+          "This plan can't be loaded from Google Play right now. Please try again in a moment.",
+        PremiumNotice.signInRequired => 'Please sign in to subscribe.',
+        PremiumNotice.error => 'Something went wrong with the purchase. Please try again.',
+        PremiumNotice.verificationUnavailable =>
+          "Google Play received your purchase, but we couldn't confirm it with our server yet. "
+              'Premium turns on automatically once we can — you can also tap Restore purchases.',
+        PremiumNotice.verificationRejected =>
+          "We couldn't verify this purchase for your account. If you were charged, please contact support.",
+        PremiumNotice.restoreNothingFound =>
+          'No active HWC Premium subscription was found for this Google account.',
       };
-    });
-    if (outcome == PurchaseOutcome.success) _loadEntitlement();
-  }
-
-  Future<void> _restore() async {
-    setState(() => _restoring = true);
-    await context.read<BillingService>().restorePurchases();
-    await _loadEntitlement();
-    if (mounted) {
-      setState(() {
-        _restoring = false;
-        _message = 'Restore requested — any active purchase will reappear shortly.';
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isPremium = _tier == SubscriptionTier.premium;
-    final monthly = _productFor(BillingPeriod.monthly);
-    final yearly = _productFor(BillingPeriod.yearly);
-    final hasRealProducts = _products.isNotEmpty;
+    final premium = context.watch<PremiumController>();
+    final isPremium = premium.isPremium;
+    final catalog = premium.catalog;
+    final monthly = catalog?.productFor(BillingPeriod.monthly);
+    final yearly = catalog?.productFor(BillingPeriod.yearly);
+    final selectedProduct = _selected == BillingPeriod.monthly ? monthly : yearly;
+    final notice = _noticeText(premium.notice);
+
+    final buttonLabel = switch (premium.phase) {
+      PurchasePhase.purchasing => 'Waiting for Google Play...',
+      PurchasePhase.verifying => 'Confirming your purchase...',
+      PurchasePhase.pending => 'Payment pending',
+      PurchasePhase.idle => selectedProduct == null
+          ? 'Subscribe'
+          : 'Subscribe — ${selectedProduct.formattedPrice} / ${_selected == BillingPeriod.monthly ? 'month' : 'year'}',
+    };
+    final canSubscribe = !premium.busy && selectedProduct != null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('HWC Premium')),
@@ -124,14 +124,20 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                if (!isPremium) ...[
+                if (isPremium)
+                  _ActiveSubscriptionCard(
+                    theme: theme,
+                    onManage: () => _openUrl(_manageSubscriptionUrl),
+                  )
+                else ...[
                   Row(
                     children: [
                       Expanded(
                         child: _PlanCard(
                           key: const Key('planMonthly'),
                           label: 'Monthly',
-                          price: monthly?.formattedPrice ?? r'$3.99/mo',
+                          price: monthly?.formattedPrice ?? '—',
+                          unit: 'per month',
                           selected: _selected == BillingPeriod.monthly,
                           onTap: () => setState(() => _selected = BillingPeriod.monthly),
                         ),
@@ -141,7 +147,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                         child: _PlanCard(
                           key: const Key('planYearly'),
                           label: 'Yearly',
-                          price: yearly?.formattedPrice ?? r'$44.99/yr',
+                          price: yearly?.formattedPrice ?? '—',
+                          unit: 'per year',
                           badge: 'Best value',
                           selected: _selected == BillingPeriod.yearly,
                           onTap: () => setState(() => _selected = BillingPeriod.yearly),
@@ -150,9 +157,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  if (_loadingProducts)
+                  if (premium.catalogLoading && catalog == null)
                     const Center(child: CircularProgressIndicator())
                   else ...[
+                    if (catalog != null && catalog.status != BillingCatalogStatus.loaded) ...[
+                      _CatalogProblem(
+                        status: catalog.status,
+                        theme: theme,
+                        onRetry: premium.catalogLoading ? null : premium.loadCatalog,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     DecoratedBox(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
@@ -177,63 +192,182 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        onPressed: _purchasing ? null : _purchase,
-                        child: Text(_purchasing
-                            ? 'Please wait...'
-                            : 'Subscribe — ${_selected == BillingPeriod.monthly ? monthly?.formattedPrice ?? r'$3.99/mo' : yearly?.formattedPrice ?? r'$44.99/yr'}'),
+                        onPressed: canSubscribe ? () => premium.purchase(_selected) : null,
+                        child: Text(buttonLabel, textAlign: TextAlign.center),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    Center(
-                      child: TextButton(
-                        key: const Key('restorePurchasesButton'),
-                        onPressed: _restoring ? null : _restore,
-                        child: Text(_restoring ? 'Restoring...' : 'Restore purchases'),
-                      ),
-                    ),
-                    if (!hasRealProducts) ...[
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: theme.colorScheme.outlineVariant),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.info_outline, size: 20, color: theme.colorScheme.onSurfaceVariant),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'These plans aren\'t set up for purchase in Google Play '
-                                'yet — prices above are illustrative until M configures '
-                                'hwc_premium_monthly / hwc_premium_yearly in Play '
-                                'Console. Tapping Subscribe won\'t charge anyone before then.',
-                                key: const Key('subscriptionNotConfiguredMessage'),
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                  if (_message != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _message!,
-                      key: const Key('subscriptionMessage'),
-                      textAlign: TextAlign.center,
                     ),
                   ],
                 ],
+                if (notice != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    notice,
+                    key: const Key('subscriptionMessage'),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                const SizedBox(height: 10),
+                Center(
+                  child: TextButton(
+                    key: const Key('restorePurchasesButton'),
+                    onPressed: premium.busy ? null : premium.restore,
+                    child: Text(premium.restoring ? 'Restoring...' : 'Restore purchases'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _Disclosure(theme: theme, onOpen: _openUrl),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Plain, factual subscription terms (Google Play subscription policy).
+class _Disclosure extends StatelessWidget {
+  const _Disclosure({required this.theme, required this.onOpen});
+
+  final ThemeData theme;
+  final Future<void> Function(String url) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final small = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Payment is charged to your Google Play account. The subscription renews '
+          'automatically each month or year at the price shown by Google Play, unless '
+          'you cancel it in Google Play before the renewal date. You can manage or '
+          'cancel any time in Google Play → Subscriptions. Tap Restore purchases to '
+          're-check a subscription on this Google account.',
+          key: const Key('subscriptionDisclosure'),
+          style: small,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          alignment: WrapAlignment.center,
+          children: [
+            TextButton(
+              key: const Key('subscriptionTermsLink'),
+              onPressed: () => onOpen(LegalLinks.terms),
+              child: const Text('Terms of Service'),
+            ),
+            TextButton(
+              key: const Key('subscriptionPrivacyLink'),
+              onPressed: () => onOpen(LegalLinks.privacy),
+              child: const Text('Privacy Policy'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ActiveSubscriptionCard extends StatelessWidget {
+  const _ActiveSubscriptionCard({required this.theme, required this.onManage});
+
+  final ThemeData theme;
+  final VoidCallback onManage;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: const Key('activeSubscriptionCard'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: theme.colorScheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Your HWC Premium subscription is active',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Billed through Google Play. You can change or cancel it any time there.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              key: const Key('manageSubscriptionButton'),
+              onPressed: onManage,
+              child: const Text('Manage subscription in Google Play'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Explains why no plans are shown instead of a vague failure.
+class _CatalogProblem extends StatelessWidget {
+  const _CatalogProblem({required this.status, required this.theme, required this.onRetry});
+
+  final BillingCatalogStatus status;
+  final ThemeData theme;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = switch (status) {
+      BillingCatalogStatus.billingUnavailable =>
+        "Google Play Billing isn't available on this device, so plans can't be shown right now.",
+      BillingCatalogStatus.productNotFound =>
+        "HWC Premium plans aren't available from Google Play for this account yet.",
+      _ => "We couldn't load the plans from Google Play. Please check your connection and try again.",
+    };
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.info_outline, size: 20, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  text,
+                  key: const Key('subscriptionCatalogMessage'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (status != BillingCatalogStatus.billingUnavailable)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                key: const Key('retryCatalogButton'),
+                onPressed: onRetry,
+                child: const Text('Try again'),
+              ),
+            ),
         ],
       ),
     );
@@ -357,6 +491,7 @@ class _PlanCard extends StatelessWidget {
     super.key,
     required this.label,
     required this.price,
+    required this.unit,
     required this.selected,
     required this.onTap,
     this.badge,
@@ -364,6 +499,7 @@ class _PlanCard extends StatelessWidget {
 
   final String label;
   final String price;
+  final String unit;
   final bool selected;
   final VoidCallback onTap;
   final String? badge;
@@ -426,6 +562,13 @@ class _PlanCard extends StatelessWidget {
                     style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
                     overflow: TextOverflow.ellipsis,
                   ),
+                  Text(
+                    unit,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             ),
@@ -443,8 +586,4 @@ class _PlanCard extends StatelessWidget {
       ),
     );
   }
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
 }

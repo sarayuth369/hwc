@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../domain/repositories/subscription_repository.dart';
+import '../../domain/billing/premium_controller.dart';
 import '../screens/settings/subscription_screen.dart';
 
 /// Compact HWC Premium upsell — reused wherever it's called from (Home,
@@ -19,15 +19,16 @@ class PremiumPromoCard extends StatefulWidget {
 }
 
 class _PremiumPromoCardState extends State<PremiumPromoCard> {
-  late final Future<SubscriptionTier> _tierFuture =
-      context.read<SubscriptionRepository>().currentTier();
-
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<SubscriptionTier>(
-      future: _tierFuture,
-      builder: (context, snapshot) {
-        if (snapshot.data == SubscriptionTier.premium) return const SizedBox.shrink();
+    final premium = context.watch<PremiumController>();
+    // Nothing for a Premium user, and nothing until the entitlement is known
+    // (so a subscriber never sees a flash of upsell at startup).
+    if (!premium.entitlementLoaded || premium.isPremium) {
+      return const SizedBox.shrink();
+    }
+    return Builder(
+      builder: (context) {
         final theme = Theme.of(context);
         return Material(
           key: const Key('premiumPromoCard'),

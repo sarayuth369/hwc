@@ -1,79 +1,172 @@
 import 'dart:async';
 
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 import '../../domain/billing/billing_product.dart';
 import '../../domain/billing/billing_service.dart';
 
-/// Real `in_app_purchase` (Google Play Billing) integration. No product is
-/// configured in Play Console yet, so `queryProducts()` correctly returns
-/// an empty list right now via `notFoundIDs` -- that is genuinely what the
-/// store reports for these product IDs today, never a hardcoded fallback
-/// price pretending to be real. Once M creates
-/// `hwc_premium_monthly`/`hwc_premium_yearly` in Play Console, this starts
-/// returning real products and real prices with no code change needed.
+/// Real Google Play Billing integration (`in_app_purchase` +
+/// `in_app_purchase_android`) for the `hwc_premium` subscription and its
+/// `monthly` / `yearly` base plans.
+///
+/// - Prices are always the store's own localized strings.
+/// - The purchase stream is subscribed to at construction (the plugin's
+///   stream is a non-buffering broadcast one), so no update is ever missed,
+///   including late `pending -> purchased` transitions and restores.
+/// - Purchases are acknowledged only via [completePurchase], which the
+///   controller calls after the backend verified them.
 class PlayBillingService implements BillingService {
-  final _iap = InAppPurchase.instance;
-  StreamSubscription<List<PurchaseDetails>>? _subscription;
-
-  @override
-  Future<bool> isAvailable() => _iap.isAvailable();
-
-  @override
-  Future<List<BillingProduct>> queryProducts() async {
-    if (!await isAvailable()) return [];
-    final response = await _iap.queryProductDetails(HwcProductIds.all.toSet());
-    return response.productDetails.map((details) {
-      final period = details.id == HwcProductIds.yearly
-          ? BillingPeriod.yearly
-          : BillingPeriod.monthly;
-      return BillingProduct(
-        productId: details.id,
-        period: period,
-        formattedPrice: details.price,
-      );
-    }).toList();
+  PlayBillingService({InAppPurchase? iap}) : _iap = iap ?? InAppPurchase.instance {
+    _storeSubscription = _iap.purchaseStream.listen(
+      _onStoreUpdate,
+      onError: (_) {
+        // A stream error must never crash the app; the controller's
+        // periodic restore re-surfaces any real purchase.
+      },
+    );
   }
 
+  final InAppPurchase _iap;
+  StreamSubscription<List<PurchaseDetails>>? _storeSubscription;
+
+  // Single-subscription: buffers until the PremiumController starts
+  // listening, so an update that arrives during app start isn't dropped.
+  final _purchases = StreamController<BillingPurchase>();
+
   @override
-  Future<PurchaseOutcome> purchase(BillingProduct product) async {
-    if (!await isAvailable()) return PurchaseOutcome.notConfigured;
-    final response = await _iap.queryProductDetails({product.productId});
-    if (response.productDetails.isEmpty) return PurchaseOutcome.notConfigured;
+  Stream<BillingPurchase> get purchases => _purchases.stream;
 
-    final completer = Completer<PurchaseOutcome>();
-    _subscription?.cancel();
-    _subscription = _iap.purchaseStream.listen((purchases) {
-      for (final purchase in purchases) {
-        if (purchase.productID != product.productId) continue;
-        switch (purchase.status) {
-          case PurchaseStatus.purchased:
-          case PurchaseStatus.restored:
-            if (purchase.pendingCompletePurchase) {
-              _iap.completePurchase(purchase);
-            }
-            if (!completer.isCompleted) completer.complete(PurchaseOutcome.success);
-          case PurchaseStatus.canceled:
-            if (!completer.isCompleted) completer.complete(PurchaseOutcome.cancelled);
-          case PurchaseStatus.error:
-            if (!completer.isCompleted) completer.complete(PurchaseOutcome.error);
-          case PurchaseStatus.pending:
-            break;
-        }
-      }
-    });
-
-    final purchaseParam = PurchaseParam(productDetails: response.productDetails.first);
-    final started = await _iap.buyNonConsumable(purchaseParam: purchaseParam);
-    if (!started && !completer.isCompleted) {
-      completer.complete(PurchaseOutcome.error);
+  void _onStoreUpdate(List<PurchaseDetails> updates) {
+    for (final details in updates) {
+      final mapped = mapPurchase(details);
+      if (mapped != null) _purchases.add(mapped);
     }
-    return completer.future.timeout(
-      const Duration(minutes: 5),
-      onTimeout: () => PurchaseOutcome.pending,
+  }
+
+  /// Maps a plugin purchase to ours. Returns null for the plugin's phantom
+  /// "purchased" entry (empty product id and token) that it emits when a
+  /// query succeeds but the user owns nothing.
+  static BillingPurchase? mapPurchase(PurchaseDetails details) {
+    final token = details.verificationData.serverVerificationData;
+    final noProduct = details.productID.isEmpty;
+
+    if (noProduct &&
+        (details.status == PurchaseStatus.purchased ||
+            details.status == PurchaseStatus.restored)) {
+      return null;
+    }
+
+    final status = switch (details.status) {
+      PurchaseStatus.purchased => BillingPurchaseStatus.purchased,
+      PurchaseStatus.restored => BillingPurchaseStatus.restored,
+      PurchaseStatus.pending => BillingPurchaseStatus.pending,
+      PurchaseStatus.canceled => BillingPurchaseStatus.canceled,
+      PurchaseStatus.error => BillingPurchaseStatus.error,
+    };
+
+    final alreadyOwned = (details.error?.message ?? '').contains('itemAlreadyOwned');
+
+    return BillingPurchase(
+      // Cancel/error updates for a failed flow carry no product id; we only
+      // sell one product, so attribute them to it.
+      productId: noProduct ? HwcSubscription.productId : details.productID,
+      status: status,
+      purchaseToken: token.isEmpty ? null : token,
+      needsCompletion: details.pendingCompletePurchase,
+      alreadyOwned: alreadyOwned,
+      platformHandle: details,
     );
   }
 
   @override
-  Future<void> restorePurchases() => _iap.restorePurchases();
+  Future<BillingCatalog> loadCatalog() async {
+    try {
+      if (!await _iap.isAvailable()) {
+        return const BillingCatalog.unavailable(BillingCatalogStatus.billingUnavailable);
+      }
+      final response = await _iap.queryProductDetails({HwcSubscription.productId});
+      if (response.error != null) {
+        return const BillingCatalog.unavailable(BillingCatalogStatus.error);
+      }
+      return selectBasePlans(response.productDetails);
+    } catch (_) {
+      return const BillingCatalog.unavailable(BillingCatalogStatus.error);
+    }
+  }
+
+  /// For subscriptions the plugin returns one entry per base plan/offer of
+  /// `hwc_premium`. Pick the plain base-plan offer (no promotional offer id)
+  /// of `monthly` and `yearly` by base plan id.
+  static BillingCatalog selectBasePlans(List<ProductDetails> details) {
+    final products = <BillingProduct>[];
+    for (final (basePlanId, period) in const [
+      (HwcSubscription.monthlyBasePlanId, BillingPeriod.monthly),
+      (HwcSubscription.yearlyBasePlanId, BillingPeriod.yearly),
+    ]) {
+      for (final d in details) {
+        if (d is! GooglePlayProductDetails || d.id != HwcSubscription.productId) continue;
+        final index = d.subscriptionIndex;
+        final offers = d.productDetails.subscriptionOfferDetails;
+        if (index == null || offers == null || index >= offers.length) continue;
+        final offer = offers[index];
+        if (offer.basePlanId != basePlanId || offer.offerId != null) continue;
+        products.add(BillingProduct(
+          productId: d.id,
+          period: period,
+          basePlanId: basePlanId,
+          formattedPrice: d.price,
+          platformHandle: d,
+        ));
+        break;
+      }
+    }
+    if (products.isEmpty) {
+      return const BillingCatalog.unavailable(BillingCatalogStatus.productNotFound);
+    }
+    return BillingCatalog(status: BillingCatalogStatus.loaded, products: products);
+  }
+
+  @override
+  Future<PurchaseStart> purchase(BillingProduct product, {required String accountId}) async {
+    final handle = product.platformHandle;
+    if (handle is! GooglePlayProductDetails) return PurchaseStart.productUnavailable;
+    try {
+      if (!await _iap.isAvailable()) return PurchaseStart.billingUnavailable;
+      final started = await _iap.buyNonConsumable(
+        purchaseParam: GooglePlayPurchaseParam(
+          productDetails: handle,
+          offerToken: handle.offerToken,
+          // Maps to Google's obfuscatedAccountId: the backend only credits a
+          // purchase to the account it is tagged with.
+          applicationUserName: accountId,
+        ),
+      );
+      return started ? PurchaseStart.started : PurchaseStart.error;
+    } catch (_) {
+      return PurchaseStart.error;
+    }
+  }
+
+  @override
+  Future<void> restorePurchases() async {
+    try {
+      if (!await _iap.isAvailable()) return;
+      await _iap.restorePurchases();
+    } catch (_) {}
+  }
+
+  @override
+  Future<void> completePurchase(BillingPurchase purchase) async {
+    final handle = purchase.platformHandle;
+    if (handle is! PurchaseDetails) return;
+    try {
+      await _iap.completePurchase(handle);
+    } catch (_) {}
+  }
+
+  void dispose() {
+    _storeSubscription?.cancel();
+    _purchases.close();
+  }
 }

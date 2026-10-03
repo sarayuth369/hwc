@@ -13,6 +13,8 @@ import 'package:bkknex_health_app/data/local/sync_service.dart';
 import 'package:bkknex_health_app/domain/ads/ad_service.dart';
 import 'package:bkknex_health_app/domain/billing/billing_product.dart';
 import 'package:bkknex_health_app/domain/billing/billing_service.dart';
+import 'package:bkknex_health_app/domain/billing/entitlement_verifier.dart';
+import 'package:bkknex_health_app/domain/billing/premium_controller.dart';
 import 'package:bkknex_health_app/domain/models/activity_record.dart';
 import 'package:bkknex_health_app/domain/models/ai_chat_failure.dart';
 import 'package:bkknex_health_app/domain/models/nutrition_record.dart';
@@ -261,25 +263,152 @@ class FakeSyncTrigger implements MetricSyncTrigger {
   }
 }
 
-/// Mirrors `PlayBillingService`'s honest current behavior (no products
-/// configured) by default, without touching any real platform channel.
+/// The real monthly/yearly offers, as `PlayBillingService` would return them
+/// for the `hwc_premium` subscription (prices are what Play Console has
+/// configured; the app itself never hard-codes them).
+BillingCatalog fakePlayCatalog() => const BillingCatalog(
+      status: BillingCatalogStatus.loaded,
+      products: [
+        BillingProduct(
+          productId: HwcSubscription.productId,
+          period: BillingPeriod.monthly,
+          basePlanId: HwcSubscription.monthlyBasePlanId,
+          formattedPrice: r'$3.99',
+        ),
+        BillingProduct(
+          productId: HwcSubscription.productId,
+          period: BillingPeriod.yearly,
+          basePlanId: HwcSubscription.yearlyBasePlanId,
+          formattedPrice: r'$44.99',
+        ),
+      ],
+    );
+
+BillingPurchase fakePurchase({
+  BillingPurchaseStatus status = BillingPurchaseStatus.purchased,
+  String? token = 'token-1',
+  bool needsCompletion = true,
+  bool alreadyOwned = false,
+  String productId = HwcSubscription.productId,
+}) =>
+    BillingPurchase(
+      productId: productId,
+      status: status,
+      purchaseToken: token,
+      needsCompletion: needsCompletion,
+      alreadyOwned: alreadyOwned,
+    );
+
+/// Controllable stand-in for Google Play Billing. Defaults to "no plans
+/// available", the honest state when nothing is configured.
 class FakeBillingService implements BillingService {
-  List<BillingProduct> products = [];
-  PurchaseOutcome purchaseResult = PurchaseOutcome.notConfigured;
-  bool restoreCalled = false;
+  FakeBillingService({BillingCatalog? catalog})
+      : catalog = catalog ??
+            const BillingCatalog.unavailable(BillingCatalogStatus.productNotFound);
+
+  BillingCatalog catalog;
+  PurchaseStart startResult = PurchaseStart.started;
+  int loadCatalogCalls = 0;
+  int restoreCalls = 0;
+  final List<BillingProduct> purchaseRequests = [];
+  final List<String> purchaseAccountIds = [];
+  final List<BillingPurchase> completed = [];
+
+  /// Emitted (asynchronously, like the real plugin) whenever
+  /// `restorePurchases()` is called.
+  List<BillingPurchase> restoreEmits = [];
+
+  /// When set, `purchase()` waits on it -- lets a test fire two taps while
+  /// the first is still in flight.
+  Completer<void>? purchaseGate;
+
+  final _controller = StreamController<BillingPurchase>.broadcast();
+
+  void emit(BillingPurchase purchase) => _controller.add(purchase);
 
   @override
-  Future<bool> isAvailable() async => true;
+  Stream<BillingPurchase> get purchases => _controller.stream;
 
   @override
-  Future<List<BillingProduct>> queryProducts() async => products;
+  Future<BillingCatalog> loadCatalog() async {
+    loadCatalogCalls++;
+    return catalog;
+  }
 
   @override
-  Future<PurchaseOutcome> purchase(BillingProduct product) async => purchaseResult;
+  Future<PurchaseStart> purchase(BillingProduct product, {required String accountId}) async {
+    purchaseRequests.add(product);
+    purchaseAccountIds.add(accountId);
+    await purchaseGate?.future;
+    return startResult;
+  }
 
   @override
-  Future<void> restorePurchases() async => restoreCalled = true;
+  Future<void> restorePurchases() async {
+    restoreCalls++;
+    for (final p in restoreEmits) {
+      _controller.add(p);
+    }
+  }
+
+  @override
+  Future<void> completePurchase(BillingPurchase purchase) async => completed.add(purchase);
 }
+
+/// Mutable entitlement source, like the server-written `subscriptions` row.
+class FakeSubscriptionRepository implements SubscriptionRepository {
+  FakeSubscriptionRepository([this.tier = SubscriptionTier.free]);
+
+  SubscriptionTier tier;
+  bool throwOnRead = false;
+  int reads = 0;
+
+  @override
+  Future<SubscriptionTier> currentTier() async {
+    reads++;
+    if (throwOnRead) throw Exception('offline');
+    return tier;
+  }
+}
+
+/// Stand-in for the backend verification call. When it answers `entitled` it
+/// flips [repository] the way the real server writing the `subscriptions` row
+/// would, so the controller's re-read sees Premium.
+class FakeEntitlementVerifier implements EntitlementVerifier {
+  FakeEntitlementVerifier({this.repository});
+
+  final FakeSubscriptionRepository? repository;
+  VerificationOutcome outcome = VerificationOutcome.entitled;
+  final List<String> verifiedTokens = [];
+  Completer<void>? gate;
+
+  @override
+  Future<VerificationOutcome> verify({
+    required String purchaseToken,
+    required String productId,
+  }) async {
+    verifiedTokens.add(purchaseToken);
+    await gate?.future;
+    if (outcome == VerificationOutcome.entitled) {
+      repository?.tier = SubscriptionTier.premium;
+    }
+    return outcome;
+  }
+}
+
+/// Builds the controller the way `app_providers.dart` does, around fakes.
+PremiumController buildPremiumController({
+  required BillingService billing,
+  required SubscriptionRepository subscriptions,
+  EntitlementVerifier? verifier,
+  CurrentUserService? currentUser,
+}) =>
+    PremiumController(
+      billing: billing,
+      subscriptions: subscriptions,
+      verifier: verifier ?? FakeEntitlementVerifier(),
+      currentUser: currentUser ?? FakeCurrentUserService(),
+    );
 
 class FakeNotificationRepository implements NotificationRepository {
   final List<NotificationItem> items = [];
@@ -334,9 +463,12 @@ List<SingleChildWidget> fullProviderSet({
   FakeNotificationRepository? notificationRepository,
   FakeBillingService? billingService,
   SubscriptionRepository? subscriptionRepository,
+  PremiumController? premiumController,
   AdService? adService,
   PushService? pushService,
 }) {
+  final billing = billingService ?? FakeBillingService();
+  final subscriptions = subscriptionRepository ?? FreeTierSubscriptionRepository();
   return [
     Provider<CurrentUserService>.value(
       value: currentUserService ?? FakeCurrentUserService(),
@@ -357,7 +489,7 @@ List<SingleChildWidget> fullProviderSet({
       create: (_) => NotificationService(prefs),
     ),
     Provider<SubscriptionRepository>.value(
-      value: subscriptionRepository ?? FreeTierSubscriptionRepository(),
+      value: subscriptions,
     ),
     Provider<FamilyRepository>(
       create: (_) => NullFamilyRepository(),
@@ -384,7 +516,18 @@ List<SingleChildWidget> fullProviderSet({
       value: notificationRepository ?? FakeNotificationRepository(),
     ),
     Provider<BillingService>.value(
-      value: billingService ?? FakeBillingService(),
+      value: billing,
+    ),
+    // The single Premium state. Loads its entitlement right away (as
+    // HomeShell's start() does in the app) so widgets that wait for
+    // `entitlementLoaded` resolve in tests.
+    ChangeNotifierProvider<PremiumController>.value(
+      value: premiumController ??
+          (buildPremiumController(
+            billing: billing,
+            subscriptions: subscriptions,
+            currentUser: currentUserService,
+          )..refreshEntitlement()),
     ),
     ChangeNotifierProvider<AdService>.value(
       value: adService ?? NullAdService(),

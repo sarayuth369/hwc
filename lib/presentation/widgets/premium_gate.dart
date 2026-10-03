@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../domain/repositories/subscription_repository.dart';
+import '../../domain/billing/premium_controller.dart';
 import '../screens/settings/subscription_screen.dart';
 
 /// Wraps a feature that should only be usable on the premium tier. Shows
-/// [child] once premium is real and available; today (free tier only) it
-/// always shows the locked state with a link to the real Subscription
-/// screen — never fakes an unlocked feature.
+/// [child] only when the authoritative [PremiumController] says Premium
+/// (server-verified); otherwise the locked state with a link to the real
+/// Subscription screen — never fakes an unlocked feature.
 class PremiumGate extends StatelessWidget {
   const PremiumGate({
     required this.featureName,
@@ -20,12 +20,13 @@ class PremiumGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<SubscriptionTier>(
-      future: context.read<SubscriptionRepository>().currentTier(),
-      builder: (context, snapshot) {
-        if (snapshot.data == SubscriptionTier.premium) {
-          return child;
-        }
+    final premium = context.watch<PremiumController>();
+    // Unlock only on the authoritative Premium state; until it is known show
+    // nothing rather than flashing the locked upsell at a subscriber.
+    if (!premium.entitlementLoaded) return const SizedBox.shrink();
+    if (premium.isPremium) return child;
+    return Builder(
+      builder: (context) {
         final theme = Theme.of(context);
         return Card(
           child: Padding(
