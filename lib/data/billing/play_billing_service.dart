@@ -17,17 +17,26 @@ import '../../domain/billing/billing_service.dart';
 /// - Purchases are acknowledged only via [completePurchase], which the
 ///   controller calls after the backend verified them.
 class PlayBillingService implements BillingService {
-  PlayBillingService({InAppPurchase? iap}) : _iap = iap ?? InAppPurchase.instance {
-    _storeSubscription = _iap.purchaseStream.listen(
-      _onStoreUpdate,
-      onError: (_) {
-        // A stream error must never crash the app; the controller's
-        // periodic restore re-surfaces any real purchase.
-      },
-    );
+  /// Never throws: this is created at app launch (so no purchase update is
+  /// missed), and a device without a working Play Billing plugin/Play Store
+  /// must simply report "billing unavailable", never crash startup.
+  PlayBillingService({InAppPurchase? iap}) {
+    try {
+      final store = iap ?? InAppPurchase.instance;
+      _iap = store;
+      _storeSubscription = store.purchaseStream.listen(
+        _onStoreUpdate,
+        onError: (_) {
+          // A stream error must never crash the app; the controller's
+          // restore re-surfaces any real purchase.
+        },
+      );
+    } catch (_) {
+      _iap = null;
+    }
   }
 
-  final InAppPurchase _iap;
+  InAppPurchase? _iap;
   StreamSubscription<List<PurchaseDetails>>? _storeSubscription;
 
   // Single-subscription: buffers until the PremiumController starts
@@ -81,11 +90,15 @@ class PlayBillingService implements BillingService {
 
   @override
   Future<BillingCatalog> loadCatalog() async {
+    final iap = _iap;
+    if (iap == null) {
+      return const BillingCatalog.unavailable(BillingCatalogStatus.billingUnavailable);
+    }
     try {
-      if (!await _iap.isAvailable()) {
+      if (!await iap.isAvailable()) {
         return const BillingCatalog.unavailable(BillingCatalogStatus.billingUnavailable);
       }
-      final response = await _iap.queryProductDetails({HwcSubscription.productId});
+      final response = await iap.queryProductDetails({HwcSubscription.productId});
       if (response.error != null) {
         return const BillingCatalog.unavailable(BillingCatalogStatus.error);
       }
@@ -131,9 +144,11 @@ class PlayBillingService implements BillingService {
   Future<PurchaseStart> purchase(BillingProduct product, {required String accountId}) async {
     final handle = product.platformHandle;
     if (handle is! GooglePlayProductDetails) return PurchaseStart.productUnavailable;
+    final iap = _iap;
+    if (iap == null) return PurchaseStart.billingUnavailable;
     try {
-      if (!await _iap.isAvailable()) return PurchaseStart.billingUnavailable;
-      final started = await _iap.buyNonConsumable(
+      if (!await iap.isAvailable()) return PurchaseStart.billingUnavailable;
+      final started = await iap.buyNonConsumable(
         purchaseParam: GooglePlayPurchaseParam(
           productDetails: handle,
           offerToken: handle.offerToken,
@@ -150,18 +165,21 @@ class PlayBillingService implements BillingService {
 
   @override
   Future<void> restorePurchases() async {
+    final iap = _iap;
+    if (iap == null) return;
     try {
-      if (!await _iap.isAvailable()) return;
-      await _iap.restorePurchases();
+      if (!await iap.isAvailable()) return;
+      await iap.restorePurchases();
     } catch (_) {}
   }
 
   @override
   Future<void> completePurchase(BillingPurchase purchase) async {
     final handle = purchase.platformHandle;
-    if (handle is! PurchaseDetails) return;
+    final iap = _iap;
+    if (handle is! PurchaseDetails || iap == null) return;
     try {
-      await _iap.completePurchase(handle);
+      await iap.completePurchase(handle);
     } catch (_) {}
   }
 

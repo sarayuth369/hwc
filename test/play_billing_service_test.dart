@@ -43,6 +43,16 @@ ProductDetailsWrapper _hwcPremium(List<SubscriptionOfferDetailsWrapper> offers) 
       title: 'HWC Premium (HWC)',
     );
 
+/// A plugin that blows up as soon as anything touches it (e.g. no Play
+/// Billing implementation registered on this device).
+class _BrokenIap implements InAppPurchase {
+  @override
+  Stream<List<PurchaseDetails>> get purchaseStream => throw StateError('no billing plugin');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw StateError('no billing plugin');
+}
+
 class _FakeIap implements InAppPurchase {
   bool available = true;
   ProductDetailsResponse? response;
@@ -228,6 +238,28 @@ void main() {
         ),
       )!;
       expect(owned.alreadyOwned, isTrue);
+    });
+  });
+
+  group('a device without a working billing plugin', () {
+    test('constructing the service never throws, and everything degrades gracefully', () async {
+      final service = PlayBillingService(iap: _BrokenIap());
+      expect((await service.loadCatalog()).status, BillingCatalogStatus.billingUnavailable);
+      await service.restorePurchases(); // no throw
+      await service.completePurchase(
+        const BillingPurchase(
+          productId: 'hwc_premium',
+          status: BillingPurchaseStatus.purchased,
+        ),
+      );
+      const product = BillingProduct(
+        productId: 'hwc_premium',
+        period: BillingPeriod.monthly,
+        basePlanId: 'monthly',
+        formattedPrice: r'$3.99',
+      );
+      expect(await service.purchase(product, accountId: 'u'), PurchaseStart.productUnavailable);
+      service.dispose();
     });
   });
 
