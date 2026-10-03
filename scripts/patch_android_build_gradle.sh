@@ -68,3 +68,27 @@ else
   sed -i '/signingConfig = signingConfigs.getByName("debug")/a\            isMinifyEnabled = false\n            isShrinkResources = false' "$GRADLE_FILE"
   echo "Disabled R8 minification/resource shrinking for release in $GRADLE_FILE"
 fi
+
+# Firebase (FCM push): apply the Google Services Gradle plugin ONLY when
+# android/app/google-services.json exists. That file is per-developer local
+# configuration (android/ is gitignored and the file is never committed), so
+# CI and fresh clones don't have it -- an unconditional plugin would fail
+# their builds. Without it the app still builds and runs; Firebase simply
+# fails to initialize at runtime and push is disabled (see
+# lib/data/push/firebase_fcm_gateway.dart), never a crash.
+SETTINGS_FILE="android/settings.gradle.kts"
+if [ -f "$SETTINGS_FILE" ] && ! grep -q "com.google.gms.google-services" "$SETTINGS_FILE"; then
+  sed -i '/id("org.jetbrains.kotlin.android")/a\    id("com.google.gms.google-services") version "4.4.4" apply false' "$SETTINGS_FILE"
+  echo "Declared com.google.gms.google-services plugin in $SETTINGS_FILE"
+fi
+
+if ! grep -q "com.google.gms.google-services" "$GRADLE_FILE"; then
+  sed -i '/^android {/i\
+// Apply only when the local Firebase config exists (see\
+// scripts/patch_android_build_gradle.sh).\
+if (file("google-services.json").exists()) {\
+    apply(plugin = "com.google.gms.google-services")\
+}\
+' "$GRADLE_FILE"
+  echo "Conditionally applied google-services plugin in $GRADLE_FILE"
+fi

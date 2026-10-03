@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../push/local_push_presenter_impl.dart' show LocalNotificationTapBridge;
+
 /// Real local wellness reminders (device-scheduled, no server involved) —
 /// not a "coming soon" placeholder. Server-driven/personalized push
 /// notifications (e.g. an AI-timed nudge) would need Firebase Cloud
@@ -35,6 +37,10 @@ class NotificationService {
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _plugin.initialize(
       settings: const InitializationSettings(android: androidSettings),
+      // Shared with the push presenter: the plugin keeps a single tap
+      // callback, so initializing without it here would silently drop push
+      // taps once a reminder is enabled. Reminder taps carry no payload.
+      onDidReceiveNotificationResponse: LocalNotificationTapBridge.handle,
     );
     _initialized = true;
   }

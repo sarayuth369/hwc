@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/ads/app_open_gate.dart';
+import '../../../core/push/push_payload.dart';
 import '../../../domain/ads/ad_service.dart';
+import '../../../domain/push/push_ports.dart';
 import '../../../domain/repositories/notification_repository.dart';
 import '../../../domain/repositories/subscription_repository.dart';
 import '../../widgets/ad_banner_bar.dart';
@@ -31,6 +35,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   // `const` StatelessWidget kept alive by IndexedStack, so its FutureBuilder
   // queries would only ever run once, at first tab build).
   int _healthRefreshGen = 0;
+  // Same trick for the Notifications tab: it loads its list once in
+  // initState, so a push arriving (or a tap on one) must recreate it.
+  int _notificationsRefreshGen = 0;
+  StreamSubscription<PushRoute>? _routeSub;
+  StreamSubscription<void>? _inboxSub;
   static const _healthTabIndex = 1;
   static const _notificationsTabIndex = 3;
   // Ads only on the two screens the prompt calls out as "suitable,
@@ -51,11 +60,40 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       // cold-start build, so cold start needs its own call. It only shows
       // if an ad happens to be loaded already; it never waits for one.
       _tryShowAppOpenAd(isColdStart: true);
+      _startPush();
     });
+  }
+
+  /// Registers this device for push (idempotent) and starts listening for
+  /// notification taps / foreground arrivals. A tap that launched the app
+  /// from a terminated state was parked by the service until now.
+  void _startPush() {
+    final push = context.read<PushService>();
+    unawaited(push.onSignedIn());
+    _routeSub ??= push.routeRequests.listen(_openRoute);
+    _inboxSub ??= push.inboxChanged.listen((_) {
+      if (!mounted) return;
+      _refreshUnreadCount();
+      setState(() => _notificationsRefreshGen++);
+    });
+    final pending = push.takePendingRoute();
+    if (pending != null) _openRoute(pending);
+  }
+
+  /// Opens the screen a notification asked for. Pops anything pushed above
+  /// the shell first (a tap on a notification is an explicit request to go
+  /// there), then selects the tab -- idempotent, so a duplicate request can
+  /// never stack navigation.
+  void _openRoute(PushRoute route) {
+    if (!mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    _select(route.tabIndex);
   }
 
   @override
   void dispose() {
+    _routeSub?.cancel();
+    _inboxSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -65,6 +103,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused) {
       _pausedAt = DateTime.now();
     } else if (state == AppLifecycleState.resumed) {
+      // Cheap + idempotent: picks up a permission the user granted in system
+      // settings, and retries a registration that failed while offline.
+      unawaited(context.read<PushService>().onSignedIn());
       final pausedAt = _pausedAt;
       _pausedAt = null;
       // A resume with no preceding pause (e.g. returning from a system
@@ -110,9 +151,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void _select(int i) {
     final leavingNotifications = _index == _notificationsTabIndex && i != _notificationsTabIndex;
     final enteringHealth = i == _healthTabIndex && _index != _healthTabIndex;
+    final enteringNotifications = i == _notificationsTabIndex && _index != _notificationsTabIndex;
     setState(() {
       _index = i;
       if (enteringHealth) _healthRefreshGen++;
+      if (enteringNotifications) _notificationsRefreshGen++;
     });
     if (leavingNotifications) _refreshUnreadCount();
   }
@@ -142,7 +185,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 ),
                 HealthScreen(key: ValueKey(_healthRefreshGen), embedded: true),
                 const AiChatScreen(),
-                const NotificationsScreen(),
+                NotificationsScreen(key: ValueKey(_notificationsRefreshGen)),
                 const ProfileScreen(),
               ],
             ),

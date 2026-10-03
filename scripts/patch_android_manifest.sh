@@ -102,6 +102,17 @@ if ! grep -q 'login-callback' "$MANIFEST"; then
   changed=1
 fi
 
+# FCM: tell Firebase which notification channel to use for pushes it displays
+# while the app is in the background/terminated. The channel itself is created
+# (importance high) at app start by lib/data/push/local_push_presenter.dart;
+# this id must match PUSH_CHANNEL_ID there and ANDROID_CHANNEL_ID in the
+# Worker's src/push/fcm.ts. Harmless when Firebase isn't configured.
+if ! grep -q 'com.google.firebase.messaging.default_notification_channel_id' "$MANIFEST"; then
+  sed -i "/android:icon=\"@mipmap\/ic_launcher\">/a\\
+        <meta-data android:name=\"com.google.firebase.messaging.default_notification_channel_id\" android:value=\"hwc_push\"/>" "$MANIFEST"
+  changed=1
+fi
+
 if [ "$changed" -eq 1 ]; then
   echo "Manifest permissions patched: $MANIFEST"
 else

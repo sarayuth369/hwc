@@ -2,20 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/app_info.dart';
 import '../../../core/config/legal_links.dart';
 import '../../../core/theme/app_theme_mode_controller.dart';
 import '../../../data/local/notification_service.dart';
 import '../../../domain/ads/ad_service.dart';
+import '../../../domain/push/push_models.dart';
+import '../../../domain/push/push_ports.dart';
 import '../../../domain/models/auth_failure.dart';
 import '../../../domain/repositories/auth_repository.dart';
 import '../../widgets/senior_mode_toggle.dart';
 import '../family/family_mode_screen.dart';
 import '../health_report/health_report_reader_screen.dart';
 
-/// App version shown in About — kept as a plain constant rather than
-/// pulling in `package_info_plus` for one string; update alongside
-/// `pubspec.yaml`'s `version:` field.
-const _appVersion = '0.1.0';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -188,6 +187,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     onTap: _pickReminderTime,
                   ),
+                if (context.read<PushService>().isAvailable) ...[
+                  const Divider(height: 1),
+                  _PushNotificationsTile(push: context.read<PushService>()),
+                ],
               ],
             ),
           ),
@@ -309,13 +312,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const ListTile(
                   leading: Icon(Icons.numbers_outlined),
                   title: Text('App version'),
-                  subtitle: Text(_appVersion),
+                  subtitle: Text(AppInfo.version),
                 ),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Shows whether push notifications are on and lets a user who declined the
+/// first prompt turn them on later. (After repeated denials Android stops
+/// showing the system prompt; the message then points to system settings.)
+class _PushNotificationsTile extends StatefulWidget {
+  const _PushNotificationsTile({required this.push});
+
+  final PushService push;
+
+  @override
+  State<_PushNotificationsTile> createState() => _PushNotificationsTileState();
+}
+
+class _PushNotificationsTileState extends State<_PushNotificationsTile> {
+  late Future<PushPermissionStatus> _status = widget.push.permissionStatus();
+  String? _hint;
+
+  Future<void> _enable() async {
+    final result = await widget.push.enable();
+    if (!mounted) return;
+    setState(() {
+      _status = Future.value(result);
+      _hint = result == PushPermissionStatus.granted
+          ? null
+          : "Notifications are turned off for HWC. You can allow them in your phone's system settings.";
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PushPermissionStatus>(
+      future: _status,
+      builder: (context, snapshot) {
+        final granted = snapshot.data == PushPermissionStatus.granted;
+        return ListTile(
+          key: const Key('pushNotificationsTile'),
+          leading: const Icon(Icons.notifications_active_outlined),
+          title: const Text('Push notifications'),
+          subtitle: Text(
+            granted
+                ? 'On — HWC can notify you about messages and updates.'
+                : (_hint ?? 'Off — turn on to get messages and updates on this phone.'),
+          ),
+          trailing: granted
+              ? const Icon(Icons.check_circle_outline)
+              : TextButton(
+                  key: const Key('enablePushButton'),
+                  onPressed: _enable,
+                  child: const Text('Turn on'),
+                ),
+        );
+      },
     );
   }
 }

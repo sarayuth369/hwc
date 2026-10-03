@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../domain/models/user_profile.dart';
+import '../../../domain/push/push_ports.dart';
 import '../../../domain/repositories/auth_repository.dart';
 import '../../../domain/repositories/profile_repository.dart';
 import '../../widgets/premium_promo_card.dart';
@@ -25,6 +26,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _signOut() async {
+    // Deactivate this device's push token while the session still exists
+    // (the RPC needs it). Best effort -- never blocks sign-out.
+    await context.read<PushService>().onSigningOut();
+    if (!mounted) return;
     await context.read<AuthRepository>().signOut();
     // AuthGate is listening to authStateChanges and will swap the whole
     // tree back to SignInScreen automatically — nothing to navigate here.

@@ -13,6 +13,9 @@ import '../data/local/free_tier_subscription_repository.dart';
 import '../data/local/metric_write_queue.dart';
 import '../data/local/notification_service.dart';
 import '../data/local/null_family_repository.dart';
+import '../data/push/fcm_push_service.dart';
+import '../data/push/firebase_fcm_gateway.dart';
+import '../data/push/local_push_presenter_impl.dart';
 import '../data/local/sync_service.dart';
 import '../data/supabase/auth_repository_impl.dart';
 import '../data/supabase/current_user_service_impl.dart';
@@ -21,8 +24,10 @@ import '../data/supabase/health_goals_repository_impl.dart';
 import '../data/supabase/metric_repositories_impl.dart';
 import '../data/supabase/notification_repository_impl.dart';
 import '../data/supabase/profile_repository_impl.dart';
+import '../data/supabase/push_token_repository_impl.dart';
 import '../data/supabase/supabase_client_provider.dart';
 import '../domain/ads/ad_service.dart';
+import '../domain/push/push_ports.dart';
 import '../domain/billing/billing_service.dart';
 import '../domain/repositories/ai_repository.dart';
 import '../domain/repositories/auth_repository.dart';
@@ -116,6 +121,22 @@ class AppProviders extends StatelessWidget {
         ),
         Provider<NotificationRepository>(
           create: (_) => NotificationRepositoryImpl(client),
+        ),
+        Provider<PushService>(
+          // lazy: false so Firebase/FCM initializes at launch (needed to
+          // catch a cold-start notification tap). `initialize()` is
+          // fire-and-forget and catches everything: a build without
+          // google-services.json, no Play services or no network just means
+          // push is disabled -- never a startup failure.
+          lazy: false,
+          create: (_) => FcmPushService(
+            gateway: FirebaseFcmGateway(),
+            tokenRepository: PushTokenRepositoryImpl(client),
+            presenter: LocalPushPresenterImpl(),
+            currentUser: currentUserService,
+            prefs: prefs,
+          )..initialize(),
+          dispose: (_, service) => service.dispose(),
         ),
         Provider<BillingService>(
           create: (_) => PlayBillingService(),

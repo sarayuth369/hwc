@@ -28,6 +28,8 @@ import 'package:bkknex_health_app/domain/repositories/current_user_service.dart'
 import 'package:bkknex_health_app/domain/repositories/daily_summary_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/family_repository.dart';
 import 'package:bkknex_health_app/domain/models/notification_item.dart';
+import 'package:bkknex_health_app/data/local/null_push_service.dart';
+import 'package:bkknex_health_app/domain/push/push_ports.dart';
 import 'package:bkknex_health_app/domain/repositories/metric_repositories.dart';
 import 'package:bkknex_health_app/domain/repositories/notification_repository.dart';
 import 'package:bkknex_health_app/domain/repositories/profile_repository.dart';
@@ -333,6 +335,7 @@ List<SingleChildWidget> fullProviderSet({
   FakeBillingService? billingService,
   SubscriptionRepository? subscriptionRepository,
   AdService? adService,
+  PushService? pushService,
 }) {
   return [
     Provider<CurrentUserService>.value(
@@ -385,6 +388,9 @@ List<SingleChildWidget> fullProviderSet({
     ),
     ChangeNotifierProvider<AdService>.value(
       value: adService ?? NullAdService(),
+    ),
+    Provider<PushService>.value(
+      value: pushService ?? NullPushService(),
     ),
     Provider<MetricSyncTrigger>.value(
       value: FakeSyncTrigger(),
