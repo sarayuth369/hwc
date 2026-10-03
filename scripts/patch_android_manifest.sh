@@ -39,6 +39,13 @@ if ! grep -q 'android.permission.POST_NOTIFICATIONS' "$MANIFEST"; then
   changed=1
 fi
 
+if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
+  sed -i '/<manifest /a\
+    <!-- Flutter only injects INTERNET into the debug/profile manifests; a release/Play build needs it declared in main for Supabase, the Worker, AdMob and FCM. -->\
+    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
+  changed=1
+fi
+
 if ! grep -q 'android.permission.RECORD_AUDIO' "$MANIFEST"; then
   sed -i '/<manifest /a\
     <!-- Required by speech_to_text for real on-device voice input in AI Talk. -->\

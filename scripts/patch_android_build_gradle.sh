@@ -92,3 +92,75 @@ if (file("google-services.json").exists()) {\
 ' "$GRADLE_FILE"
   echo "Conditionally applied google-services plugin in $GRADLE_FILE"
 fi
+
+# ---------------------------------------------------------------------------
+# Release signing (Google Play upload key).
+#
+# `flutter create` ships the release build type signed with the DEBUG key,
+# which Google Play rejects. This wires a real release signing config that
+# reads android/key.properties (gitignored -- never committed), e.g.:
+#
+#   storeFile=D:/path/to/hwc-upload.jks     (absolute, or relative to android/)
+#   storePassword=...
+#   keyAlias=...
+#   keyPassword=...
+#
+# With key.properties present, release builds are signed with that key. With
+# it absent, plain `flutter run --release` / CI still work (debug signing),
+# but `bundleRelease` (the Play bundle) FAILS with an explanatory error, so a
+# debug-signed bundle can never be produced by accident. A debug-signed
+# bundle for pure pipeline verification must be requested explicitly with
+# the environment variable ORG_GRADLE_PROJECT_allowDebugSignedBundle=true.
+# ---------------------------------------------------------------------------
+if ! grep -q "keystorePropertiesFile" "$GRADLE_FILE"; then
+  SIGNING_TOP=$(mktemp)
+  SIGNING_BLOCK=$(mktemp)
+  cat > "$SIGNING_TOP" <<'KT'
+// Release signing (see scripts/patch_android_build_gradle.sh). key.properties
+// is local-only and gitignored.
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
+}
+
+gradle.taskGraph.whenReady {
+    val buildingPlayBundle = allTasks.any { it.name.contains("bundleRelease", ignoreCase = true) }
+    if (buildingPlayBundle &&
+        !keystorePropertiesFile.exists() &&
+        System.getenv("ORG_GRADLE_PROJECT_allowDebugSignedBundle") != "true"
+    ) {
+        throw GradleException(
+            "Refusing to build a Play bundle: android/key.properties (the upload key " +
+                "configuration) is missing, so the release would be signed with the DEBUG " +
+                "key, which Google Play rejects. Create the upload keystore and key.properties " +
+                "first (see HWC_REPORT.md)."
+        )
+    }
+}
+
+KT
+  cat > "$SIGNING_BLOCK" <<'KT'
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
+KT
+  awk -v f="$SIGNING_TOP" '/^android \{/ && !d { while ((getline l < f) > 0) print l; d=1 } { print }' "$GRADLE_FILE" > "$GRADLE_FILE.tmp" && mv "$GRADLE_FILE.tmp" "$GRADLE_FILE"
+  awk -v f="$SIGNING_BLOCK" '/^    buildTypes \{/ && !d { while ((getline l < f) > 0) print l; d=1 } { print }' "$GRADLE_FILE" > "$GRADLE_FILE.tmp" && mv "$GRADLE_FILE.tmp" "$GRADLE_FILE"
+  rm -f "$SIGNING_TOP" "$SIGNING_BLOCK"
+  sed -i 's|signingConfig = signingConfigs.getByName("debug")|signingConfig = if (keystorePropertiesFile.exists()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")|' "$GRADLE_FILE"
+  # Imports must be the first statements in a .kts script.
+  { printf 'import java.io.FileInputStream
+import java.util.Properties
+
+'; cat "$GRADLE_FILE"; } > "$GRADLE_FILE.tmp" && mv "$GRADLE_FILE.tmp" "$GRADLE_FILE"
+  echo "Release signing wired in $GRADLE_FILE"
+fi
